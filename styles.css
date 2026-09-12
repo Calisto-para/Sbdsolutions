@@ -123,3 +123,21 @@ body { overflow-x: hidden; }
   .proof-grid { grid-template-columns:1fr; }
   .official-contact-item { padding:19px; }
 }
+
+/* SBD Solutions contact methods */
+.sbd-contact-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:2rem 0}
+.sbd-contact-method{display:flex;align-items:center;gap:.85rem;padding:1rem 1.1rem;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.04)}
+.sbd-contact-method .contact-icon{width:24px;height:24px;min-width:24px;fill:currentColor}
+.sbd-contact-label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;opacity:.65;margin-bottom:.2rem}
+.sbd-contact-method a{font-weight:700;text-decoration:none}
+@media (max-width:780px){.sbd-contact-methods{grid-template-columns:1fr}}
+
+
+/* Compact project CTA: keeps Start a Project visible without crowding the header. */
+.compact-cta-section { padding: 44px 0; }
+.compact-cta { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 28px 30px; border: 1px solid rgba(255,255,255,.10); border-radius: 22px; background: #11161d; color: #fff; }
+.compact-cta h2 { margin: 6px 0 8px; }
+.compact-cta p:not(.eyebrow) { margin: 0; opacity: .78; }
+.compact-cta .eyebrow { margin: 0; }
+.compact-cta .button { flex: 0 0 auto; }
+@media (max-width: 780px) { .compact-cta { flex-direction: column; align-items: flex-start; } .compact-cta .button { width: 100%; justify-content: center; } }

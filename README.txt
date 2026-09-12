@@ -21,8 +21,3 @@ Render Static Site:
 - Start Command: none
 
 No backend or .env file is required.
-
-FORM SUBMISSION
-The Start a Project form submits through FormSubmit to Sbdiam.solutions@gmail.com. On first use, FormSubmit may send a one-time activation/confirmation email to that address. After activation, form submissions are delivered to the email. This static site does not require a backend or environment variables.
-
-Navigation update: Services removed from primary navigation. Contact is contact-only; Start a Project is the enquiry form page.

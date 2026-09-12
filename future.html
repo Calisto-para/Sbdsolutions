@@ -13,9 +13,9 @@
 <header class="site-header">
   <a aria-label="SBD Solutions home" class="brand" href="index.html"><img alt="SBD Solutions" class="brand-logo" src="sbd-solutions-logo-transparent.png"></a>
   <nav aria-label="Primary navigation" class="nav" id="primary-navigation">
-    <a href="about.html">Company</a><a href="services.html">Solutions</a><a href="work.html">Work</a><a href="clients.html">Clients</a><a href="trust.html">Trust</a><a aria-current="page" href="future.html">Future</a><a href="contact.html">Contact</a>
+    <a href="index.html">Home</a><a href="services.html">Services</a><a href="about.html">About</a><a href="work.html">Portfolio</a><a href="contact.html">Contact</a>
   </nav>
-  <a class="button button-small" href="contact.html">Start a project <span>↗</span></a>
+  <a class="button button-small header-whatsapp" href="https://wa.me/2349063924288" target="_blank" rel="noopener">◉&nbsp; Chat on WhatsApp</a>
   <button aria-controls="primary-navigation" aria-expanded="false" aria-label="Open navigation" class="menu-toggle" type="button">☰</button>
 </header>
 <main class="future-page">
@@ -82,5 +82,7 @@
 </main>
 <footer class="footer"><div class="footer-brand"><img alt="SBD Solutions" src="sbd-solutions-logo-transparent.png"><span>Technology. Made Simple.</span></div><div class="footer-contact"><a href="tel:+2348122104576">Call · +234 812 210 4576</a><a href="https://wa.me/2349063924288">WhatsApp · +234 906 392 4288</a><a href="mailto:Sbdiam.solutions@gmail.com">Sbdiam.solutions@gmail.com</a></div></footer>
 <script>(()=>{const h=document.querySelector('.site-header'),b=document.querySelector('.menu-toggle');if(!h||!b)return;b.addEventListener('click',()=>{const open=h.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open));b.setAttribute('aria-label',open?'Close navigation':'Open navigation');b.textContent=open?'×':'☰'});h.querySelectorAll('.nav a').forEach(a=>a.addEventListener('click',()=>{h.classList.remove('nav-open');b.setAttribute('aria-expanded','false');b.setAttribute('aria-label','Open navigation');b.textContent='☰'}));})();</script>
-</body>
+<script data-dynamic-nav="true">
+(()=>{const file=location.pathname.split('/').pop()||'index.html';document.querySelectorAll('.nav a').forEach(a=>{const href=(a.getAttribute('href')||'').split('#')[0];if(href===file||(!file&&href==='index.html'))a.setAttribute('aria-current','page');if(href.startsWith('https://wa.me'))a.setAttribute('target','_blank');});})();
+</script></body>
 </html>

@@ -1,22 +1,23 @@
-SBD Solutions — Step 10 Final Multi-Page QA
+SBD SOLUTIONS — FLAT GITHUB / RENDER PACKAGE
 
-Architecture
+This package is intentionally flat so the website can be uploaded to a GitHub repository without uploading folders through the GitHub web interface.
+
+Pages:
 - index.html — Home
-- about.html — About
+- about.html — Company
 - services.html — Services
 - work.html — Work
 - clients.html — Clients
 - trust.html — Trust
 - future.html — Future
-- contact.html — Start a Project / Enquiry
+- contact.html — Contact
 
-This is a true multi-page website. Primary navigation links open separate HTML pages rather than scrolling to sections on one page. Each page keeps the same SBD Solutions header, navigation, visual system, logo, typography and footer.
+Assets are kept beside the HTML files so relative paths work directly on GitHub Pages, Render, and simple static hosting.
 
-Verified official information used
-- Brand message: Your Vision. Our Tech.
-- Brand pillars: Build • Improve • Automate
-- Supporting message: SBD Solutions helps businesses, startups, organizations, and individuals use technology to build, improve, and automate their operations.
-- Services: Web Development; Business Automation; Digital Solutions
-- Contact: +234 906 392 4288; +234 812 210 4576; Sbdiam.solutions@gmail.com
+Render Static Site:
+- Build Command: leave empty
+- Publish Directory: .
+- Environment Variables: none
+- Start Command: none
 
-No unverified client names, testimonials, achievements, social profiles, statistics or project results were invented.
+No backend or .env file is required.

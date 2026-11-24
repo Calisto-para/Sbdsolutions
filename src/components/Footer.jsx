@@ -18,17 +18,17 @@ export default function Footer() {
           </div>
           <div className="footer-col">
             <h3>Company</h3>
-            <Link to="/about">About Us</Link>
-            <Link to="/projects">Projects</Link>
-            <Link to="/who-we-help">Who We Help</Link>
-            <Link to="/contact">Contact</Link>
+            <Link to="/about.html">About Us</Link>
+            <Link to="/projects.html">Projects</Link>
+            <Link to="/who-we-help.html">Who We Help</Link>
+            <Link to="/contact.html">Contact</Link>
           </div>
           <div className="footer-col">
             <h3>Services</h3>
-            <Link to="/services#ai-solutions">AI Solutions</Link>
-            <Link to="/services#automation">Business Automation</Link>
-            <Link to="/services#software-development">Software Development</Link>
-            <Link to="/services#software-development">Web Development</Link>
+            <Link to="/services.html#ai-solutions">AI Solutions</Link>
+            <Link to="/services.html#automation">Business Automation</Link>
+            <Link to="/services.html#software-development">Software Development</Link>
+            <Link to="/services.html#software-development">Web Development</Link>
           </div>
           <div className="footer-col">
             <h3>Contact</h3>

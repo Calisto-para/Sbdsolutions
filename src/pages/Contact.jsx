@@ -52,7 +52,7 @@ export default function Contact() {
       <div className="form-card">
         <h2>Have a detailed brief?</h2>
         <p>Project details — service required, budget and requirements — go through the project enquiry form. It reaches us directly and gives us what we need to reply usefully.</p>
-        <Link className="btn btn--primary" to="/start-a-project">Start a Project
+        <Link className="btn btn--primary" to="/start-a-project.html">Start a Project
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
         </Link>
         <p className="form-note">For everything else, message us on WhatsApp or send an email. We read both.</p>
@@ -135,7 +135,7 @@ export default function Contact() {
           <p>Send your requirements through the project enquiry form and we will come back with the next steps.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project</Link>
           <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>
         </div>
       </div>

@@ -11,7 +11,7 @@ export default function NotFound() {
         </p>
         <div className="btn-row" style={{ marginTop: 26 }}>
           <Link className="btn btn--primary" to="/">Back to Home</Link>
-          <Link className="btn btn--ghost" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--ghost" to="/start-a-project.html">Start a Project</Link>
         </div>
       </div>
     </section>

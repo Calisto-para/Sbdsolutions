@@ -10,8 +10,8 @@ export default function Clients() {
         <h1>Technology Solutions for Businesses Ready to <span>Grow.</span></h1>
         <p className="lead">We work with businesses, startups and organizations looking to improve their operations through digital technology, automation and intelligent software solutions.</p>
         <div className="btn-row">
-          <Link className="btn btn--primary" to="/start-a-project">Discuss Your Business Needs</Link>
-          <Link className="btn btn--outline" to="/services">Explore services</Link>
+          <Link className="btn btn--primary" to="/start-a-project.html">Discuss Your Business Needs</Link>
+          <Link className="btn btn--outline" to="/services.html">Explore services</Link>
         </div>
       </div>
       <aside className="page-tag">
@@ -114,7 +114,7 @@ export default function Clients() {
         <p className="lead">Whatever stage your business is in, we can help identify technology solutions that support your objectives. You do not need to know the technology before the first conversation — only what needs to work better.</p>
         <p className="lead">If your requirement falls outside what we build, you will hear that directly rather than after a proposal.</p>
         <div className="btn-row">
-          <Link className="btn btn--primary" to="/start-a-project">Discuss Your Business Needs
+          <Link className="btn btn--primary" to="/start-a-project.html">Discuss Your Business Needs
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
           </Link>
         </div>
@@ -130,7 +130,7 @@ export default function Clients() {
           <p>Tell us what you are trying to build, improve or automate. We will help you find the shortest sensible path to it.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project</Link>
           <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>
         </div>
       </div>

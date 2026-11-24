@@ -10,15 +10,16 @@ import Contact from "./pages/Contact";
 import StartProject from "./pages/StartProject";
 import NotFound from "./pages/NotFound";
 
-/* Keep old .html links working after the move to client-side routing. */
-const LEGACY = {
+/* Every route is a real .html file, so a refresh or a shared link always works
+   on hosts without rewrite rules. These aliases redirect in-app if reached. */
+const ALIASES = {
   "/index.html": "/",
-  "/services.html": "/services",
-  "/work.html": "/projects",
-  "/about.html": "/about",
-  "/clients.html": "/who-we-help",
-  "/contact.html": "/contact",
-  "/start-project.html": "/start-a-project",
+  "/services": "/services.html",
+  "/projects": "/projects.html",
+  "/about": "/about.html",
+  "/who-we-help": "/who-we-help.html",
+  "/contact": "/contact.html",
+  "/start-a-project": "/start-a-project.html",
 };
 
 export default function App() {
@@ -26,17 +27,18 @@ export default function App() {
     <>
       <RouteMeta />
       <Routes>
-        {Object.entries(LEGACY).map(([from, to]) => (
+        {Object.entries(ALIASES).map(([from, to]) => (
           <Route key={from} path={from} element={<Navigate to={to} replace />} />
         ))}
         <Route element={<Layout />}>
           <Route index element={<Home />} />
-          <Route path="services" element={<Services />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="about" element={<About />} />
-          <Route path="who-we-help" element={<Clients />} />
-          <Route path="contact" element={<Contact />} />
-          <Route path="start-a-project" element={<StartProject />} />
+          <Route path="src/index.html" element={<Home />} />
+          <Route path="services.html" element={<Services />} />
+          <Route path="projects.html" element={<Projects />} />
+          <Route path="about.html" element={<About />} />
+          <Route path="who-we-help.html" element={<Clients />} />
+          <Route path="contact.html" element={<Contact />} />
+          <Route path="start-a-project.html" element={<StartProject />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

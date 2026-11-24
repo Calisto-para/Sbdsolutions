@@ -10,7 +10,7 @@ export default function Services() {
         <h1>AI, Automation &amp; <span>Technology Solutions</span></h1>
         <p className="lead">SBD AI Solutions helps businesses transform their operations through artificial intelligence, intelligent automation and custom software development. We create practical technology solutions that simplify processes, improve customer experiences and support business growth.</p>
         <div className="btn-row">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project</Link>
           <a className="btn btn--outline" href="#ai-solutions">Jump to services</a>
         </div>
       </div>
@@ -204,7 +204,7 @@ export default function Services() {
           <p>Describe the goal or the problem. We will tell you what the work actually involves — even if the answer is that you do not need us yet.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
           </Link>
           <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>

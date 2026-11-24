@@ -10,8 +10,8 @@ export default function Projects() {
         <h1>Technology That Turns Ideas Into <span>Solutions.</span></h1>
         <p className="lead">Explore our technology projects, digital solutions and software development work. At SBD AI Solutions, we focus on building practical solutions that help businesses improve operations, simplify processes and embrace smarter technology.</p>
         <div className="btn-row">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
-          <Link className="btn btn--outline" to="/services">Explore services</Link>
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project</Link>
+          <Link className="btn btn--outline" to="/services.html">Explore services</Link>
         </div>
       </div>
       <aside className="page-tag">
@@ -121,7 +121,7 @@ export default function Projects() {
           <p>Let's discuss how technology can help your business.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
           </Link>
           <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>

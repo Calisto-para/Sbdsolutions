@@ -13,10 +13,10 @@ export default function Home() {
         <h1>Intelligent Technology.<br /><span>Smarter Business.</span></h1>
         <p className="lead">SBD AI Solutions is a technology company helping businesses transform their operations through artificial intelligence, intelligent automation and custom software solutions. We build digital tools that simplify business processes, improve customer experiences and support business growth.</p>
         <div className="btn-row">
-          <Link className="btn btn--primary" to="/services">Explore Our Solutions
+          <Link className="btn btn--primary" to="/services.html">Explore Our Solutions
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
           </Link>
-          <Link className="btn btn--ghost" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--ghost" to="/start-a-project.html">Start a Project</Link>
         </div>
       </div>
     </div>
@@ -99,19 +99,19 @@ export default function Home() {
       </div>
 
       <div className="card-grid">
-        <Link className="card reveal" to="/services#ai-solutions">
+        <Link className="card reveal" to="/services.html#ai-solutions">
           <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3" /></svg></span>
           <h3>Artificial Intelligence Solutions</h3>
           <p>AI customer assistants, intelligent chatbots, AI support systems and custom integrations that handle real conversations.</p>
           <span className="card-arrow">Learn more</span>
         </Link>
-        <Link className="card reveal" to="/services#automation">
+        <Link className="card reveal" to="/services.html#automation">
           <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></svg></span>
           <h3>Business Automation &amp; Integration</h3>
           <p>WhatsApp automation, automated enquiries, workflow and booking automation, and the integrations that connect your tools.</p>
           <span className="card-arrow">Learn more</span>
         </Link>
-        <Link className="card reveal" to="/services#software-development">
+        <Link className="card reveal" to="/services.html#software-development">
           <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m8 8-5 4 5 4M16 8l5 4-5 4" /><path d="m13 5-3 14" /></svg></span>
           <h3>Custom Software Development</h3>
           <p>Corporate websites, e-commerce platforms, custom web applications, dashboards and the databases behind them.</p>
@@ -165,7 +165,7 @@ export default function Home() {
           <p>Tell us what you want to build, improve or automate. We will come back with a clear view of the options and the next step.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project
+          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
           </Link>
           <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>

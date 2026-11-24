@@ -38,6 +38,31 @@ export const META = {
     description:
       "Tell SBD AI Solutions about your business, project or technology requirements. Submit a project enquiry and we will respond with the next steps.",
   },
+  "/register.html": {
+    title: "Create an Account | SBD AI Solutions",
+    description:
+      "Create your SBD AI Solutions account to build, train and test AI assistants for your business.",
+  },
+  "/login.html": {
+    title: "Sign In | SBD AI Solutions",
+    description: "Sign in to your SBD AI Solutions account to manage AI assistants, training material and conversations.",
+  },
+  "/forgot-password.html": {
+    title: "Reset Your Password | SBD AI Solutions",
+    description: "Request a password reset link for your SBD AI Solutions account.",
+  },
+  "/reset-password.html": {
+    title: "Choose a New Password | SBD AI Solutions",
+    description: "Choose a new password for your SBD AI Solutions account.",
+  },
+  "/verify-email.html": {
+    title: "Verify Your Email | SBD AI Solutions",
+    description: "Confirm your email address to activate your SBD AI Solutions account.",
+  },
+  "/dashboard.html": {
+    title: "My Dashboard | SBD AI Solutions",
+    description: "Your private SBD AI Solutions dashboard: AI assistants, training material and conversations.",
+  },
 };
 
 export function metaFor(pathname) {

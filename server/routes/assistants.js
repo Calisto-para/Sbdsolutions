@@ -1,0 +1,393 @@
+import express from "express";
+import multer from "multer";
+import { z } from "zod";
+import { query, one } from "../db.js";
+import { requireAuth } from "../auth.js";
+import { buildSystemPrompt, complete } from "../ai.js";
+
+const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const TONES = ["friendly", "professional", "concise", "formal"];
+
+const toApi = (row) => ({
+  id: row.id,
+  name: row.name,
+  businessDescription: row.business_description,
+  services: row.services,
+  products: row.products,
+  tone: row.tone,
+  language: row.language,
+  greeting: row.greeting,
+  instructions: row.instructions,
+  isActive: row.is_active,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const knowledgeApi = (row) => ({
+  id: row.id,
+  kind: row.kind,
+  title: row.title,
+  content: row.content,
+  sourceName: row.source_name,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const assistantShape = {
+  name: z.string().trim().min(2, "Give the assistant a name.").max(120),
+  businessDescription: z.string().trim().max(2000).optional().default(""),
+  services: z.string().trim().max(4000).optional().default(""),
+  products: z.string().trim().max(4000).optional().default(""),
+  tone: z.enum(TONES).optional().default("friendly"),
+  language: z.string().trim().max(60).optional().default("English"),
+  greeting: z.string().trim().max(600).optional().default(""),
+  instructions: z.string().trim().max(4000).optional().default(""),
+  isActive: z.boolean().optional().default(true),
+};
+
+async function ownedAssistant(userId, assistantId) {
+  if (!/^[0-9a-f-]{36}$/i.test(assistantId)) return null;
+  return one("select * from assistants where id = $1 and user_id = $2", [assistantId, userId]);
+}
+
+router.get("/", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await query(
+      `select a.*,
+              (select count(*)::int from knowledge_items k where k.assistant_id = a.id) as knowledge_count,
+              (select count(*)::int from conversations c where c.assistant_id = a.id) as conversation_count
+         from assistants a
+        where a.user_id = $1
+        order by a.created_at desc`,
+      [req.user.id]
+    );
+    res.json({
+      assistants: rows.map((row) => ({
+        ...toApi(row),
+        knowledgeCount: row.knowledge_count,
+        conversationCount: row.conversation_count,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/", requireAuth, async (req, res, next) => {
+  try {
+    const body = z.object(assistantShape).parse(req.body);
+    const row = await one(
+      `insert into assistants
+        (user_id, name, business_description, services, products, tone, language, greeting, instructions, is_active)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       returning *`,
+      [
+        req.user.id,
+        body.name,
+        body.businessDescription,
+        body.services,
+        body.products,
+        body.tone,
+        body.language,
+        body.greeting || `Hi! I'm ${body.name}. How can I help you today?`,
+        body.instructions,
+        body.isActive,
+      ]
+    );
+    res.status(201).json({ assistant: toApi(row), message: "Assistant created." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const row = await ownedAssistant(req.user.id, req.params.id);
+    if (!row) return res.status(404).json({ error: "Assistant not found." });
+    res.json({ assistant: toApi(row) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const existing = await ownedAssistant(req.user.id, req.params.id);
+    if (!existing) return res.status(404).json({ error: "Assistant not found." });
+
+    const body = z.object(assistantShape).parse({ ...toApi(existing), ...req.body });
+    const row = await one(
+      `update assistants
+          set name = $3, business_description = $4, services = $5, products = $6,
+              tone = $7, language = $8, greeting = $9, instructions = $10, is_active = $11, updated_at = now()
+        where id = $1 and user_id = $2
+        returning *`,
+      [
+        req.params.id,
+        req.user.id,
+        body.name,
+        body.businessDescription,
+        body.services,
+        body.products,
+        body.tone,
+        body.language,
+        body.greeting,
+        body.instructions,
+        body.isActive,
+      ]
+    );
+    res.json({ assistant: toApi(row), message: "Assistant updated." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const existing = await ownedAssistant(req.user.id, req.params.id);
+    if (!existing) return res.status(404).json({ error: "Assistant not found." });
+    await query("delete from assistants where id = $1 and user_id = $2", [req.params.id, req.user.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- training material ---------- */
+
+router.get("/:id/knowledge", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+    const rows = await query(
+      "select * from knowledge_items where assistant_id = $1 order by created_at desc",
+      [assistant.id]
+    );
+    res.json({ items: rows.map(knowledgeApi) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/knowledge", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+
+    const body = z
+      .object({
+        kind: z.enum(["note", "faq", "pricing"]).default("note"),
+        title: z.string().trim().max(160).optional().default(""),
+        content: z.string().trim().min(2, "Add the information itself.").max(20000),
+      })
+      .parse(req.body);
+
+    const row = await one(
+      `insert into knowledge_items (user_id, assistant_id, kind, title, content)
+       values ($1, $2, $3, $4, $5) returning *`,
+      [req.user.id, assistant.id, body.kind, body.title, body.content]
+    );
+    res.status(201).json({ item: knowledgeApi(row), message: "Training information saved." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+    if (!req.file) return res.status(400).json({ error: "Choose a PDF file to upload." });
+
+    if (req.file.mimetype !== "application/pdf" && !/\.pdf$/i.test(req.file.originalname || "")) {
+      return res.status(400).json({ error: "Only PDF documents can be uploaded." });
+    }
+
+    let text = "";
+    try {
+      const pdfModule = await import("pdf-parse");
+      if (pdfModule.PDFParse) {
+        const parser = new pdfModule.PDFParse({ data: new Uint8Array(req.file.buffer) });
+        const result = await parser.getText();
+        text = result.text || "";
+        await parser.destroy?.();
+      } else {
+        const parse = pdfModule.default || pdfModule;
+        const result = await parse(req.file.buffer);
+        text = result.text || "";
+      }
+    } catch (error) {
+      console.error("[pdf] extraction failed", error.message);
+      return res.status(422).json({ error: "That PDF could not be read. Try a text-based PDF or add the information manually." });
+    }
+
+    const cleaned = text
+      .split("\n")
+      .filter((line) => !/^-- \d+ of \d+ --$/.test(line.trim()))
+      .join("\n")
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (cleaned.length < 20) {
+      return res.status(422).json({ error: "No readable text was found in that PDF. Scanned documents need to be added manually." });
+    }
+
+    const row = await one(
+      `insert into knowledge_items (user_id, assistant_id, kind, title, content, source_name)
+       values ($1, $2, 'document', $3, $4, $5) returning *`,
+      [
+        req.user.id,
+        assistant.id,
+        (req.body.title || req.file.originalname || "Document").slice(0, 160),
+        cleaned.slice(0, 40000),
+        req.file.originalname || "document.pdf",
+      ]
+    );
+
+    res.status(201).json({ item: knowledgeApi(row), message: "PDF processed and added to the assistant's knowledge." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id/knowledge/:itemId", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+
+    const body = z
+      .object({
+        title: z.string().trim().max(160).optional(),
+        content: z.string().trim().min(2).max(40000).optional(),
+      })
+      .parse(req.body);
+
+    const row = await one(
+      `update knowledge_items
+          set title = coalesce($4, title), content = coalesce($5, content), updated_at = now()
+        where id = $1 and assistant_id = $2 and user_id = $3
+        returning *`,
+      [req.params.itemId, assistant.id, req.user.id, body.title ?? null, body.content ?? null]
+    );
+    if (!row) return res.status(404).json({ error: "That training item was not found." });
+    res.json({ item: knowledgeApi(row), message: "Training information updated." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/knowledge/:itemId", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+    await query("delete from knowledge_items where id = $1 and assistant_id = $2 and user_id = $3", [
+      req.params.itemId,
+      assistant.id,
+      req.user.id,
+    ]);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- conversations and testing ---------- */
+
+router.get("/:id/conversations", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+    const rows = await query(
+      `select c.*,
+              (select count(*)::int from messages m where m.conversation_id = c.id) as message_count,
+              (select m.content from messages m where m.conversation_id = c.id order by m.created_at desc limit 1) as last_message
+         from conversations c
+        where c.assistant_id = $1 and c.user_id = $2
+        order by c.updated_at desc
+        limit 50`,
+      [assistant.id, req.user.id]
+    );
+    res.json({
+      conversations: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        messageCount: row.message_count,
+        lastMessage: row.last_message,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/chat", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+
+    const body = z
+      .object({
+        message: z.string().trim().min(1, "Type a message first.").max(2000),
+        conversationId: z.string().uuid().optional(),
+      })
+      .parse(req.body);
+
+    let conversation = null;
+    if (body.conversationId) {
+      conversation = await one(
+        "select * from conversations where id = $1 and user_id = $2 and assistant_id = $3",
+        [body.conversationId, req.user.id, assistant.id]
+      );
+      if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+    }
+
+    const history = conversation
+      ? await query(
+          `select role, content from messages where conversation_id = $1 order by created_at desc limit 12`,
+          [conversation.id]
+        )
+      : [];
+
+    const business = await one("select * from businesses where user_id = $1", [req.user.id]);
+    const knowledge = await query(
+      "select kind, title, content from knowledge_items where assistant_id = $1 order by created_at desc limit 60",
+      [assistant.id]
+    );
+
+    const system = buildSystemPrompt({ assistant, business, knowledge });
+    const messages = [
+      ...history.reverse().map((row) => ({ role: row.role, content: row.content })),
+      { role: "user", content: body.message },
+    ];
+
+    const reply = await complete({ system, messages });
+
+    if (!conversation) {
+      conversation = await one(
+        `insert into conversations (user_id, assistant_id, title)
+         values ($1, $2, $3) returning *`,
+        [req.user.id, assistant.id, body.message.slice(0, 70)]
+      );
+    }
+
+    await query("insert into messages (conversation_id, role, content) values ($1, 'user', $2)", [
+      conversation.id,
+      body.message,
+    ]);
+    await query("insert into messages (conversation_id, role, content) values ($1, 'assistant', $2)", [
+      conversation.id,
+      reply,
+    ]);
+    await query("update conversations set updated_at = now() where id = $1", [conversation.id]);
+
+    res.json({ conversationId: conversation.id, reply });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

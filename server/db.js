@@ -5,6 +5,10 @@ import { env } from "./env.js";
 let implementation = null;
 let kind = "";
 
+/* Connection/readiness state, so the server can start even while the database
+   is still being reached (a slow Neon wake-up must not fail the deploy). */
+export const dbState = { ready: false, error: null };
+
 export function dbKind() {
   return kind;
 }

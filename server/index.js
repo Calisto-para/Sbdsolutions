@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
 import { migrate } from "./migrate.js";
-import { dbKind } from "./db.js";
+import { dbKind, dbState } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import businessRoutes from "./routes/business.js";
 import assistantRoutes from "./routes/assistants.js";
@@ -35,9 +35,20 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     database: dbKind() || "not-initialised",
+    dbReady: dbState.ready,
     emailConfigured,
     aiConfigured,
     environment: env.nodeEnv,
+  });
+});
+
+/* Keep answering while the database is still starting, with a clear message
+   rather than a crash or an empty 500. */
+app.use("/api", (req, res, next) => {
+  if (dbState.ready) return next();
+  res.status(503).json({
+    error: "The platform database is still starting up. Please try again in a few seconds.",
+    code: "DB_NOT_READY",
   });
 });
 
@@ -70,14 +81,23 @@ const ROUTE_FILES = {
   "/start-a-project": "start-a-project.html",
 };
 
-if (fs.existsSync(DIST)) {
-  app.use(express.static(DIST, { extensions: ["html"], maxAge: env.isProd ? "1h" : 0 }));
+const hasBuild = fs.existsSync(path.join(DIST, "index.html"));
+const WEB_ROOT = hasBuild ? DIST : path.resolve(".");
+
+if (!hasBuild) {
+  console.warn("[web] dist/ is missing — the build step did not run. Serving the prerendered pages committed at the repo root.");
+}
+
+if (fs.existsSync(WEB_ROOT)) {
+  app.use(express.static(WEB_ROOT, { extensions: ["html"], maxAge: env.isProd ? "1h" : 0 }));
   app.get(Object.keys(ROUTE_FILES), (req, res) => {
-    res.sendFile(path.join(DIST, ROUTE_FILES[req.path]));
+    const file = path.join(WEB_ROOT, ROUTE_FILES[req.path]);
+    if (!fs.existsSync(file)) return res.status(404).send("Not found");
+    res.sendFile(file);
   });
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api")) return next();
-    res.sendFile(path.join(DIST, "index.html"));
+    res.sendFile(path.join(WEB_ROOT, "index.html"));
   });
 }
 
@@ -103,10 +123,38 @@ app.use((error, req, res, next) => {
 });
 
 const port = env.port;
-await migrate();
-app.listen(port, "0.0.0.0", () => {
+
+/* Bind first: Render needs an open port quickly, and a slow database wake-up
+   must not look like a failed deploy. */
+const server = app.listen(port, "0.0.0.0", () => {
   console.log(`[server] listening on ${port}`);
-  console.log(`[server] database: ${dbConfigured ? "Neon/Postgres (DATABASE_URL)" : `local PGlite (${env.pgliteDir})`}`);
-  console.log(`[server] email: ${emailConfigured ? "SMTP configured" : "not configured — links are logged"}`);
+  console.log(`[server] database: ${dbConfigured ? "Postgres via DATABASE_URL" : `local PGlite (${env.pgliteDir}) — data is not durable`}`);
+  console.log(`[server] email: ${emailConfigured ? "SMTP configured" : "not configured — verification links are logged and shown on screen"}`);
   console.log(`[server] AI: ${aiConfigured ? `OpenAI ${env.openai.model}` : "not configured — add OPENAI_API_KEY"}`);
+  if (env.isProd && !dbConfigured) {
+    console.error("[db] DATABASE_URL is not set in production — data will be lost on every deploy.");
+  }
+  connectDatabase();
 });
+
+server.on("error", (error) => {
+  console.error("[server] failed to start:", error.message);
+  process.exit(1);
+});
+
+async function connectDatabase(attempt = 1) {
+  try {
+    await migrate();
+    dbState.ready = true;
+    dbState.error = null;
+  } catch (error) {
+    dbState.ready = false;
+    dbState.error = error.message;
+    console.error(`[db] connect/migrate attempt ${attempt} failed: ${error.message}`);
+    if (attempt < 12) {
+      setTimeout(() => connectDatabase(attempt + 1), 5000);
+    } else {
+      console.error("[db] giving up after 12 attempts — check DATABASE_URL and that the Neon database accepts connections.");
+    }
+  }
+}

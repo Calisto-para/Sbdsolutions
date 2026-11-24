@@ -108,6 +108,26 @@ The platform needs a Node server, which a static site cannot run:
 Until that switch happens the account pages are served by the static host and
 show a clear "platform is not connected" message instead of failing silently.
 
+### If a Render deploy fails
+
+The previous failure was `sh: 1: vite: not found`: with `NODE_ENV=production`
+set on the service, `npm ci` skips devDependencies, so the build tool was
+missing. Vite, its React plugin and PGlite now live in `dependencies`, so a
+production install still builds.
+
+Settings to check on the service:
+
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm start`
+- Health Check Path: `/api/health`
+- Node version: 22.12 or newer (`engines` in `package.json`)
+- `DATABASE_URL` set, otherwise the app falls back to an embedded database that
+  is wiped on every deploy
+
+The server binds its port before connecting to the database and retries for a
+minute, so a slow Neon wake-up no longer fails the deploy. If the build step is
+skipped entirely, it serves the prerendered pages committed at the repo root.
+
 ## Contact details used on the site
 
 - Calling: +234 812 210 4576

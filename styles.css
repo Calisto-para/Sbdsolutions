@@ -420,27 +420,36 @@ h2 span {
 .hero {
   position: relative;
   overflow: hidden;
-  background: var(--ink);
-  color: #fff;
-  padding: 92px 0 96px;
+  background: radial-gradient(
+      95% 130% at 84% -12%,
+      #e6efff 0%,
+      rgba(230, 239, 255, 0) 60%
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+  color: var(--text);
+  padding: 92px 0 100px;
+  border-bottom: 1px solid var(--line);
 }
 
+/* Subtle AI dot lattice */
 .hero::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.045) 1px,
-      transparent 1px
-    ),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: radial-gradient(ellipse at 60% 20%, #000 20%, transparent 78%);
+  background-image: radial-gradient(
+    rgba(31, 91, 234, 0.18) 1px,
+    transparent 1px
+  );
+  background-size: 26px 26px;
+  mask-image: radial-gradient(
+    ellipse 72% 62% at 74% 8%,
+    #000 0%,
+    transparent 72%
+  );
   -webkit-mask-image: radial-gradient(
-    ellipse at 60% 20%,
-    #000 20%,
-    transparent 78%
+    ellipse 72% 62% at 74% 8%,
+    #000 0%,
+    transparent 72%
   );
   pointer-events: none;
 }
@@ -448,14 +457,15 @@ h2 span {
 .hero::after {
   content: "";
   position: absolute;
-  top: -220px;
-  right: -140px;
-  width: 720px;
-  height: 720px;
+  top: -280px;
+  right: -200px;
+  width: 780px;
+  height: 780px;
+  border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(31, 91, 234, 0.42) 0%,
-    rgba(31, 91, 234, 0) 62%
+    rgba(31, 91, 234, 0.16) 0%,
+    rgba(31, 91, 234, 0) 64%
   );
   pointer-events: none;
 }
@@ -470,54 +480,107 @@ h2 span {
 }
 
 .hero h1 {
-  color: #fff;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+}
+
+.hero h1 span {
+  background: linear-gradient(96deg, #1f5bea 0%, #4b8cff 58%, #1f5bea 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .hero .lead {
   margin-top: 26px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
   font-size: 1.09rem;
 }
 
-.hero-meta {
+.hero .btn--primary {
+  box-shadow: 0 14px 30px rgba(31, 91, 234, 0.24);
+}
+
+.hero .btn--ghost {
+  background: #fff;
+  border-color: var(--line-strong);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(8, 13, 23, 0.05);
+}
+
+.hero .btn--ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #fff;
+}
+
+/* Hero service highlights */
+.hero-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 44px;
+  padding-top: 34px;
+  border-top: 1px solid var(--line);
+}
+
+.highlight {
   display: flex;
-  flex-wrap: wrap;
-  gap: 14px 28px;
-  margin-top: 40px;
-  padding-top: 26px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 26px rgba(8, 13, 23, 0.04);
 }
 
-.hero-meta span {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.62);
+.highlight-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.hero-meta span::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
+.highlight-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.highlight h3 {
+  margin: 0 0 4px;
+  font-size: 0.93rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.highlight p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 /* Hero capability panel */
 .panel {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.07),
-    rgba(255, 255, 255, 0.02)
-  );
-  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(160deg, #ffffff 0%, #f7faff 100%);
+  box-shadow: 0 30px 70px rgba(8, 13, 23, 0.12);
   overflow: hidden;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), #6aa6ff 58%, transparent);
 }
 
 .panel-bar {
@@ -525,24 +588,28 @@ h2 span {
   align-items: center;
   gap: 8px;
   padding: 15px 22px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--line);
   font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .panel-bar i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--line-strong);
+}
+
+.panel-bar i:first-child {
+  background: var(--accent);
 }
 
 .panel-bar b {
   margin-left: auto;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--muted-light);
 }
 
 .panel-body {
@@ -554,7 +621,7 @@ h2 span {
   grid-template-columns: 40px 1fr;
   gap: 16px;
   padding: 22px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 
 .panel-row:last-child {
@@ -570,14 +637,14 @@ h2 span {
 
 .panel-row h3 {
   font-size: 1.02rem;
-  color: #fff;
+  color: var(--ink);
   margin-bottom: 6px;
 }
 
 .panel-row p {
   font-size: 0.83rem;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--muted);
 }
 
 .panel-foot {
@@ -586,18 +653,18 @@ h2 span {
   justify-content: space-between;
   gap: 12px;
   padding: 15px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
   font-size: 0.74rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.44);
+  color: var(--muted);
 }
 
 .panel-foot strong {
   font-family: var(--font-display);
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
 }
 
 /* Pillars strip ---------------------------------------------------------- */
@@ -1578,6 +1645,13 @@ a.card:hover .card-arrow::after {
 
   .hero .lead {
     font-size: 1rem;
+  }
+
+  .hero-highlights {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 34px;
+    padding-top: 28px;
   }
 
   .page-hero {

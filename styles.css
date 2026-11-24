@@ -1460,6 +1460,81 @@ a.card:hover .card-arrow::after {
   color: rgba(255, 255, 255, 0.42);
 }
 
+/* Extended components ---------------------------------------------------- */
+.info-grid--four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.duo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22px;
+}
+
+.steps--five {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.form-card--wide {
+  max-width: 900px;
+  margin-inline: auto;
+}
+
+.form-status {
+  display: none;
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.form-status.is-visible {
+  display: block;
+}
+
+.form-status--ok {
+  border-color: #b7d4bd;
+  background: #eef8f1;
+  color: #1c5730;
+}
+
+.form-status--error {
+  border-color: #f0c2c2;
+  background: #fdf1f1;
+  color: #8a2626;
+}
+
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tag {
+  padding: 11px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.note {
+  max-width: 70ch;
+  margin-top: 18px;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: var(--muted-light);
+}
+
+.form-card .btn:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
 /* Reveal animation ------------------------------------------------------- */
 .js .reveal {
   opacity: 0;
@@ -1489,6 +1564,11 @@ a.card:hover .card-arrow::after {
 
   .card-grid,
   .info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .info-grid--four,
+  .steps--five {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -1652,6 +1732,12 @@ a.card:hover .card-arrow::after {
     gap: 12px;
     margin-top: 34px;
     padding-top: 28px;
+  }
+
+  .duo-grid,
+  .info-grid--four,
+  .steps--five {
+    grid-template-columns: 1fr;
   }
 
   .page-hero {

@@ -1,101 +1,113 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Modern corporate office building">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Modern corporate office building with SBD AI Solutions signage">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#bfe0ff"/>
-      <stop offset="0.6" stop-color="#e4f2ff"/>
-      <stop offset="1" stop-color="#f8fcff"/>
+      <stop offset="0" stop-color="#3aa8f0"/>
+      <stop offset="0.45" stop-color="#8fd0f8"/>
+      <stop offset="1" stop-color="#eef8ff"/>
     </linearGradient>
     <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#9ccbf4"/>
-      <stop offset="0.55" stop-color="#c9e4fa"/>
-      <stop offset="1" stop-color="#7fb6e8"/>
+      <stop offset="0" stop-color="#7fb6e0"/>
+      <stop offset="0.5" stop-color="#b9dcf5"/>
+      <stop offset="1" stop-color="#5f9bcf"/>
     </linearGradient>
     <linearGradient id="glass2" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b8d9f7"/>
-      <stop offset="0.6" stop-color="#e0effc"/>
-      <stop offset="1" stop-color="#9bc5ec"/>
+      <stop offset="0" stop-color="#9dc8e9"/>
+      <stop offset="0.55" stop-color="#d6eafa"/>
+      <stop offset="1" stop-color="#7dadd7"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="10" y1="2" x2="54" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3fbcff"/>
+      <stop offset="0.42" stop-color="#1c8bf2"/>
+      <stop offset="1" stop-color="#0a45c4"/>
     </linearGradient>
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#e8f2fb"/>
-      <stop offset="1" stop-color="#d3e5f5"/>
+      <stop offset="0" stop-color="#dbe9f5"/>
+      <stop offset="1" stop-color="#c9dcec"/>
     </linearGradient>
   </defs>
 
   <rect width="800" height="600" fill="url(#sky)"/>
 
-  <!-- clouds -->
-  <g fill="#ffffff" opacity="0.75">
-    <ellipse cx="150" cy="96" rx="66" ry="24"/>
-    <ellipse cx="196" cy="86" rx="48" ry="20"/>
-    <ellipse cx="656" cy="138" rx="58" ry="20"/>
-    <ellipse cx="700" cy="130" rx="40" ry="16"/>
+  <g fill="#ffffff" opacity="0.85">
+    <ellipse cx="140" cy="92" rx="70" ry="26"/>
+    <ellipse cx="188" cy="80" rx="50" ry="21"/>
+    <ellipse cx="648" cy="132" rx="60" ry="21"/>
+    <ellipse cx="694" cy="124" rx="42" ry="17"/>
   </g>
 
-  <!-- distant blocks -->
-  <g fill="#cfe4f7">
-    <rect x="54" y="292" width="118" height="196" rx="6"/>
-    <rect x="180" y="330" width="84" height="158" rx="6"/>
-    <rect x="612" y="316" width="96" height="172" rx="6"/>
-    <rect x="700" y="352" width="70" height="136" rx="6"/>
+  <g fill="#cfe4f7" opacity="0.85">
+    <rect x="44" y="300" width="110" height="188" rx="6"/>
+    <rect x="164" y="338" width="78" height="150" rx="6"/>
+    <rect x="626" y="320" width="90" height="168" rx="6"/>
+    <rect x="716" y="356" width="62" height="132" rx="6"/>
   </g>
 
   <!-- main tower -->
   <g>
-    <rect x="246" y="118" width="308" height="370" rx="8" fill="#f4f9fe"/>
-    <rect x="258" y="132" width="284" height="342" rx="6" fill="url(#glass2)"/>
-    <!-- mullions -->
-    <g stroke="#ffffff" stroke-width="3" opacity="0.85">
-      <line x1="330" y1="132" x2="330" y2="474"/>
-      <line x1="402" y1="132" x2="402" y2="474"/>
-      <line x1="474" y1="132" x2="474" y2="474"/>
-      <line x1="258" y1="190" x2="542" y2="190"/>
-      <line x1="258" y1="250" x2="542" y2="250"/>
-      <line x1="258" y1="310" x2="542" y2="310"/>
-      <line x1="258" y1="370" x2="542" y2="370"/>
-      <line x1="258" y1="430" x2="542" y2="430"/>
+    <rect x="238" y="104" width="324" height="384" rx="8" fill="#f7fbff"/>
+    <!-- facade band that carries the sign -->
+    <rect x="238" y="150" width="324" height="74" fill="#f2f7fc"/>
+    <g stroke="#dfe9f2" stroke-width="2">
+      <line x1="238" y1="150" x2="562" y2="150"/>
+      <line x1="238" y1="224" x2="562" y2="224"/>
     </g>
-    <!-- reflections -->
-    <path d="M262 468 320 136h52L288 468Z" fill="#ffffff" opacity="0.18"/>
-    <path d="M470 468 520 136h26L500 468Z" fill="#ffffff" opacity="0.12"/>
-    <!-- blue accent band -->
-    <rect x="246" y="118" width="308" height="16" rx="8" fill="#1f74f0"/>
-    <rect x="246" y="470" width="308" height="18" fill="#dbe9f9"/>
+
+    <!-- signage: S mark + wordmark -->
+    <g>
+      <circle cx="286" cy="187" r="22" fill="url(#mark)"/>
+      <path d="M293.5 178.5c-1.8-2.2-4.3-3.3-7.2-3.3-4.2 0-7.1 2-7.1 5.1 0 2.8 2.1 4.2 6.5 5.2 4.2 1 6.2 2.3 6.2 5 0 3-2.8 5-6.9 5-2.9 0-5.4-1.1-7.2-3.3"
+            fill="none" stroke="#ffffff" stroke-width="5.1" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="318" y="196" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#0c2246" letter-spacing="-0.5">SBD AI Solutions</text>
+    </g>
+
+    <rect x="250" y="238" width="300" height="240" rx="5" fill="url(#glass2)"/>
+    <g stroke="#ffffff" stroke-width="3" opacity="0.85">
+      <line x1="324" y1="238" x2="324" y2="478"/>
+      <line x1="398" y1="238" x2="398" y2="478"/>
+      <line x1="472" y1="238" x2="472" y2="478"/>
+      <line x1="250" y1="298" x2="550" y2="298"/>
+      <line x1="250" y1="358" x2="550" y2="358"/>
+      <line x1="250" y1="418" x2="550" y2="418"/>
+    </g>
+    <path d="M256 476 314 240h50L306 476Z" fill="#ffffff" opacity="0.16"/>
+    <path d="M466 476 516 240h26L494 476Z" fill="#ffffff" opacity="0.1"/>
+    <rect x="238" y="104" width="324" height="14" rx="7" fill="#1f74f0"/>
+    <rect x="238" y="478" width="324" height="16" fill="#c9dbeb"/>
   </g>
 
   <!-- low wing -->
   <g>
-    <rect x="150" y="356" width="112" height="132" rx="6" fill="#ffffff"/>
-    <rect x="160" y="368" width="92" height="108" rx="4" fill="url(#glass)"/>
+    <rect x="146" y="360" width="110" height="130" rx="6" fill="#ffffff"/>
+    <rect x="156" y="372" width="90" height="106" rx="4" fill="url(#glass)"/>
     <g stroke="#ffffff" stroke-width="2.5" opacity="0.8">
-      <line x1="206" y1="368" x2="206" y2="476"/>
-      <line x1="160" y1="404" x2="252" y2="404"/>
-      <line x1="160" y1="440" x2="252" y2="440"/>
+      <line x1="201" y1="372" x2="201" y2="478"/>
+      <line x1="156" y1="408" x2="246" y2="408"/>
+      <line x1="156" y1="444" x2="246" y2="444"/>
     </g>
   </g>
 
   <!-- entrance -->
   <g>
-    <rect x="352" y="404" width="96" height="84" rx="4" fill="#ffffff" opacity="0.9"/>
-    <rect x="366" y="418" width="68" height="70" rx="3" fill="#5f9ed6"/>
-    <line x1="400" y1="418" x2="400" y2="488" stroke="#ffffff" stroke-width="3" opacity="0.8"/>
+    <rect x="348" y="404" width="96" height="84" rx="4" fill="#ffffff" opacity="0.92"/>
+    <rect x="362" y="418" width="68" height="70" rx="3" fill="#4b8fc8"/>
+    <line x1="396" y1="418" x2="396" y2="488" stroke="#ffffff" stroke-width="3" opacity="0.8"/>
   </g>
 
   <!-- ground -->
   <rect x="0" y="488" width="800" height="112" fill="url(#ground)"/>
-  <rect x="0" y="488" width="800" height="7" fill="#c2d9ee"/>
+  <rect x="0" y="488" width="800" height="6" fill="#b7d0e3"/>
 
   <!-- trees -->
   <g>
-    <rect x="108" y="452" width="9" height="46" rx="4" fill="#9a7a5c"/>
-    <circle cx="112" cy="436" r="34" fill="#79b97e"/>
-    <circle cx="88" cy="448" r="24" fill="#93cc96"/>
-    <circle cx="136" cy="448" r="22" fill="#69ad70"/>
-    <rect x="676" y="446" width="9" height="52" rx="4" fill="#9a7a5c"/>
-    <circle cx="680" cy="428" r="32" fill="#79b97e"/>
-    <circle cx="706" cy="442" r="22" fill="#93cc96"/>
-    <circle cx="656" cy="442" r="20" fill="#69ad70"/>
+    <rect x="104" y="452" width="9" height="46" rx="4" fill="#9a7a5c"/>
+    <circle cx="108" cy="436" r="34" fill="#79b97e"/>
+    <circle cx="84" cy="448" r="24" fill="#93cc96"/>
+    <circle cx="132" cy="448" r="22" fill="#69ad70"/>
+    <rect x="660" y="446" width="9" height="52" rx="4" fill="#9a7a5c"/>
+    <circle cx="664" cy="428" r="32" fill="#79b97e"/>
+    <circle cx="690" cy="442" r="22" fill="#93cc96"/>
+    <circle cx="640" cy="442" r="20" fill="#69ad70"/>
   </g>
 
-  <!-- path -->
-  <path d="M352 500h96l26 100H326Z" fill="#e6eff8"/>
+  <path d="M348 500h96l26 100H322Z" fill="#e2edf7"/>
 </svg>

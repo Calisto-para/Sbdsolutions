@@ -36,6 +36,24 @@
     });
   }
 
+  /* Navigation dropdowns — one open at a time, close on outside click */
+  var drops = document.querySelectorAll(".nav-drop");
+
+  drops.forEach(function (drop) {
+    drop.addEventListener("toggle", function () {
+      if (!drop.open) return;
+      drops.forEach(function (other) {
+        if (other !== drop) other.open = false;
+      });
+    });
+  });
+
+  document.addEventListener("click", function (event) {
+    drops.forEach(function (drop) {
+      if (drop.open && !drop.contains(event.target)) drop.open = false;
+    });
+  });
+
   /* Scroll reveal */
   var items = document.querySelectorAll(".reveal");
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

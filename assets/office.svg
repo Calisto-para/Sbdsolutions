@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Modern corporate office building">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe0ff"/>
+      <stop offset="0.6" stop-color="#e4f2ff"/>
+      <stop offset="1" stop-color="#f8fcff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9ccbf4"/>
+      <stop offset="0.55" stop-color="#c9e4fa"/>
+      <stop offset="1" stop-color="#7fb6e8"/>
+    </linearGradient>
+    <linearGradient id="glass2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8d9f7"/>
+      <stop offset="0.6" stop-color="#e0effc"/>
+      <stop offset="1" stop-color="#9bc5ec"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8f2fb"/>
+      <stop offset="1" stop-color="#d3e5f5"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="600" fill="url(#sky)"/>
+
+  <!-- clouds -->
+  <g fill="#ffffff" opacity="0.75">
+    <ellipse cx="150" cy="96" rx="66" ry="24"/>
+    <ellipse cx="196" cy="86" rx="48" ry="20"/>
+    <ellipse cx="656" cy="138" rx="58" ry="20"/>
+    <ellipse cx="700" cy="130" rx="40" ry="16"/>
+  </g>
+
+  <!-- distant blocks -->
+  <g fill="#cfe4f7">
+    <rect x="54" y="292" width="118" height="196" rx="6"/>
+    <rect x="180" y="330" width="84" height="158" rx="6"/>
+    <rect x="612" y="316" width="96" height="172" rx="6"/>
+    <rect x="700" y="352" width="70" height="136" rx="6"/>
+  </g>
+
+  <!-- main tower -->
+  <g>
+    <rect x="246" y="118" width="308" height="370" rx="8" fill="#f4f9fe"/>
+    <rect x="258" y="132" width="284" height="342" rx="6" fill="url(#glass2)"/>
+    <!-- mullions -->
+    <g stroke="#ffffff" stroke-width="3" opacity="0.85">
+      <line x1="330" y1="132" x2="330" y2="474"/>
+      <line x1="402" y1="132" x2="402" y2="474"/>
+      <line x1="474" y1="132" x2="474" y2="474"/>
+      <line x1="258" y1="190" x2="542" y2="190"/>
+      <line x1="258" y1="250" x2="542" y2="250"/>
+      <line x1="258" y1="310" x2="542" y2="310"/>
+      <line x1="258" y1="370" x2="542" y2="370"/>
+      <line x1="258" y1="430" x2="542" y2="430"/>
+    </g>
+    <!-- reflections -->
+    <path d="M262 468 320 136h52L288 468Z" fill="#ffffff" opacity="0.18"/>
+    <path d="M470 468 520 136h26L500 468Z" fill="#ffffff" opacity="0.12"/>
+    <!-- blue accent band -->
+    <rect x="246" y="118" width="308" height="16" rx="8" fill="#1f74f0"/>
+    <rect x="246" y="470" width="308" height="18" fill="#dbe9f9"/>
+  </g>
+
+  <!-- low wing -->
+  <g>
+    <rect x="150" y="356" width="112" height="132" rx="6" fill="#ffffff"/>
+    <rect x="160" y="368" width="92" height="108" rx="4" fill="url(#glass)"/>
+    <g stroke="#ffffff" stroke-width="2.5" opacity="0.8">
+      <line x1="206" y1="368" x2="206" y2="476"/>
+      <line x1="160" y1="404" x2="252" y2="404"/>
+      <line x1="160" y1="440" x2="252" y2="440"/>
+    </g>
+  </g>
+
+  <!-- entrance -->
+  <g>
+    <rect x="352" y="404" width="96" height="84" rx="4" fill="#ffffff" opacity="0.9"/>
+    <rect x="366" y="418" width="68" height="70" rx="3" fill="#5f9ed6"/>
+    <line x1="400" y1="418" x2="400" y2="488" stroke="#ffffff" stroke-width="3" opacity="0.8"/>
+  </g>
+
+  <!-- ground -->
+  <rect x="0" y="488" width="800" height="112" fill="url(#ground)"/>
+  <rect x="0" y="488" width="800" height="7" fill="#c2d9ee"/>
+
+  <!-- trees -->
+  <g>
+    <rect x="108" y="452" width="9" height="46" rx="4" fill="#9a7a5c"/>
+    <circle cx="112" cy="436" r="34" fill="#79b97e"/>
+    <circle cx="88" cy="448" r="24" fill="#93cc96"/>
+    <circle cx="136" cy="448" r="22" fill="#69ad70"/>
+    <rect x="676" y="446" width="9" height="52" rx="4" fill="#9a7a5c"/>
+    <circle cx="680" cy="428" r="32" fill="#79b97e"/>
+    <circle cx="706" cy="442" r="22" fill="#93cc96"/>
+    <circle cx="656" cy="442" r="20" fill="#69ad70"/>
+  </g>
+
+  <!-- path -->
+  <path d="M352 500h96l26 100H326Z" fill="#e6eff8"/>
+</svg>

@@ -1235,8 +1235,8 @@ a.card:hover .card-arrow::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   flex: none;
   border-radius: 50%;
   background: var(--accent-soft);
@@ -1244,24 +1244,31 @@ a.card:hover .card-arrow::after {
 }
 
 .channel-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
 }
 
-.channel span {
+.channel > div {
+  min-width: 0;
+}
+
+.channel > div > span {
   display: block;
-  font-size: 0.71rem;
-  letter-spacing: 0.13em;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--muted-light);
-  margin-bottom: 2px;
 }
 
 .channel strong {
-  font-size: 0.95rem;
+  display: block;
+  font-size: 0.97rem;
+  line-height: 1.35;
   font-weight: 600;
   color: var(--ink);
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .form-card {
@@ -1871,9 +1878,10 @@ a.card:hover .card-arrow::after {
 }
 
 .brand-name {
-  font-family: var(--font-display);
-  font-size: 1.16rem;
-  letter-spacing: 0.01em;
+  font-family: var(--font-body);
+  font-size: 1.14rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 

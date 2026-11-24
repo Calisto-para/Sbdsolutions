@@ -65,21 +65,7 @@ app.use("/api", (req, res) => {
 /* Static site: the built app in dist/, with clean URLs mapped to the real
    prerendered .html files. */
 const DIST = path.resolve("dist");
-const ROUTE_FILES = {
-  "/": "index.html",
-  "/dashboard": "dashboard.html",
-  "/register": "register.html",
-  "/login": "login.html",
-  "/forgot-password": "forgot-password.html",
-  "/reset-password": "reset-password.html",
-  "/verify-email": "verify-email.html",
-  "/services": "services.html",
-  "/projects": "projects.html",
-  "/about": "about.html",
-  "/who-we-help": "who-we-help.html",
-  "/contact": "contact.html",
-  "/start-a-project": "start-a-project.html",
-};
+const APP_SHELL = "index.html";
 
 const hasBuild = fs.existsSync(path.join(DIST, "index.html"));
 const WEB_ROOT = hasBuild ? DIST : path.resolve(".");
@@ -90,14 +76,10 @@ if (!hasBuild) {
 
 if (fs.existsSync(WEB_ROOT)) {
   app.use(express.static(WEB_ROOT, { extensions: ["html"], maxAge: env.isProd ? "1h" : 0 }));
-  app.get(Object.keys(ROUTE_FILES), (req, res) => {
-    const file = path.join(WEB_ROOT, ROUTE_FILES[req.path]);
-    if (!fs.existsSync(file)) return res.status(404).send("Not found");
-    res.sendFile(file);
-  });
+  /* Client-side routing: every non-file path boots the React app. */
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api")) return next();
-    res.sendFile(path.join(WEB_ROOT, "index.html"));
+    res.sendFile(path.join(WEB_ROOT, APP_SHELL));
   });
 }
 

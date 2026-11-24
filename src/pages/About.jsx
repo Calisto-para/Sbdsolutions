@@ -145,10 +145,10 @@ export default function About() {
         <div className="reveal">
           <p className="lead">We create technology solutions that help businesses move forward.</p>
           <div className="btn-row" style={{ marginTop: "28px" }}>
-            <Link className="btn btn--primary" to="/start-a-project.html">Work With Us
+            <Link className="btn btn--primary" to="/start-a-project">Work With Us
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
             </Link>
-            <Link className="btn btn--outline" to="/services.html">Explore services</Link>
+            <Link className="btn btn--outline" to="/services">Explore services</Link>
           </div>
         </div>
       </div>
@@ -163,8 +163,8 @@ export default function About() {
           <p>Whether it is a new platform, a process that needs automating or a decision you want a second opinion on, start with a conversation.</p>
         </div>
         <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project.html">Start a Project</Link>
-          <Link className="btn btn--ghost" to="/contact.html">Contact us</Link>
+          <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
+          <Link className="btn btn--ghost" to="/contact">Contact us</Link>
         </div>
       </div>
     </div>

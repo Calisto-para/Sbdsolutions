@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const SERVICE_LINKS = [
-  { to: "/services.html#ai-solutions", label: "AI Solutions" },
-  { to: "/services.html#automation", label: "Business Automation" },
-  { to: "/services.html#software-development", label: "Software Development" },
-  { to: "/services.html", label: "All services" },
+  { to: "/services#ai-solutions", label: "AI Solutions" },
+  { to: "/services#automation", label: "Business Automation" },
+  { to: "/services#software-development", label: "Software Development" },
+  { to: "/services", label: "All services" },
 ];
 
 const CLIENT_LINKS = [
-  { to: "/who-we-help.html#businesses", label: "Businesses" },
-  { to: "/who-we-help.html#startups", label: "Startups" },
-  { to: "/who-we-help.html#organizations", label: "Organizations" },
-  { to: "/who-we-help.html#online-businesses", label: "Online Businesses" },
+  { to: "/who-we-help#businesses", label: "Businesses" },
+  { to: "/who-we-help#startups", label: "Startups" },
+  { to: "/who-we-help#organizations", label: "Organizations" },
+  { to: "/who-we-help#online-businesses", label: "Online Businesses" },
 ];
 
 const CARET = (
@@ -21,11 +22,21 @@ const CARET = (
   </svg>
 );
 
+const ARROW = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path d="M5 12h14" />
+    <path d="m13 6 6 6-6 6" />
+  </svg>
+);
+
 export default function Header() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, status, logout } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const headerRef = useRef(null);
   const dropRefs = useRef([]);
+  const signedIn = status === "ready" && Boolean(user);
 
   /* Route change closes the menus. */
   useEffect(() => {
@@ -71,9 +82,14 @@ export default function Header() {
     });
   };
 
-  const servicesActive = pathname === "/services.html";
-  const clientsActive = pathname === "/who-we-help.html";
+  const servicesActive = pathname === "/services";
+  const clientsActive = pathname === "/who-we-help";
   const linkProps = (active) => (active ? { "aria-current": "page" } : {});
+
+  const signOut = async () => {
+    await logout();
+    navigate("/");
+  };
 
   return (
     <header className={`site-header${navOpen ? " nav-open" : ""}`} ref={headerRef}>
@@ -95,8 +111,8 @@ export default function Header() {
               ))}
             </div>
           </details>
-          <Link to="/projects.html" {...linkProps(pathname === "/projects.html")}>Projects</Link>
-          <Link to="/about.html" {...linkProps(pathname === "/about.html")}>About Us</Link>
+          <Link to="/projects" {...linkProps(pathname === "/projects")}>Projects</Link>
+          <Link to="/about" {...linkProps(pathname === "/about")}>About Us</Link>
           <details className="nav-drop" ref={(node) => (dropRefs.current[1] = node)} onToggle={(e) => handleToggle(1, e)}>
             <summary {...linkProps(clientsActive)}>Who We Help {CARET}</summary>
             <div className="nav-drop-panel">
@@ -105,16 +121,38 @@ export default function Header() {
               ))}
             </div>
           </details>
-          <Link to="/contact.html" {...linkProps(pathname === "/contact.html")}>Contact</Link>
+          <Link to="/contact" {...linkProps(pathname === "/contact")}>Contact</Link>
+
+          <div className="nav-account">
+            {signedIn ? (
+              <>
+                <Link to="/dashboard">My Dashboard</Link>
+                <button type="button" className="nav-account-button" onClick={signOut}>Sign out</button>
+              </>
+            ) : (
+              <>
+                <Link to="/login">Sign in</Link>
+                <Link to="/register">Create account</Link>
+              </>
+            )}
+          </div>
         </nav>
         <div className="header-actions">
-          <Link className="btn btn--primary btn--sm" to="/start-a-project.html" {...linkProps(pathname === "/start-a-project.html")}>
-            Start a Project{" "}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M5 12h14" />
-              <path d="m13 6 6 6-6 6" />
-            </svg>
-          </Link>
+          {signedIn ? (
+            <>
+              <button type="button" className="header-signin" onClick={signOut}>Sign out</button>
+              <Link className="btn btn--primary btn--sm" to="/dashboard">
+                My Dashboard {ARROW}
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link className="header-signin" to="/login">Sign in</Link>
+              <Link className="btn btn--primary btn--sm" to="/register">
+                Create account {ARROW}
+              </Link>
+            </>
+          )}
           <button
             className="menu-toggle"
             type="button"

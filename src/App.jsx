@@ -17,22 +17,22 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import VerifyEmail from "./pages/auth/VerifyEmail";
 import Dashboard from "./pages/dashboard/Dashboard";
 
-/* Every route is a real .html file, so a refresh or a shared link always works
-   on hosts without rewrite rules. These aliases redirect in-app if reached. */
-const ALIASES = {
+/* Old .html addresses still resolve, in-app, to the clean routes. */
+const LEGACY = {
   "/index.html": "/",
-  "/services": "/services.html",
-  "/projects": "/projects.html",
-  "/about": "/about.html",
-  "/who-we-help": "/who-we-help.html",
-  "/contact": "/contact.html",
-  "/start-a-project": "/start-a-project.html",
-  "/register": "/register.html",
-  "/login": "/login.html",
-  "/forgot-password": "/forgot-password.html",
-  "/reset-password": "/reset-password.html",
-  "/verify-email": "/verify-email.html",
-  "/dashboard": "/dashboard.html",
+  "/src/index.html": "/",
+  "/services.html": "/services",
+  "/projects.html": "/projects",
+  "/about.html": "/about",
+  "/who-we-help.html": "/who-we-help",
+  "/contact.html": "/contact",
+  "/start-a-project.html": "/start-a-project",
+  "/register.html": "/register",
+  "/login.html": "/login",
+  "/forgot-password.html": "/forgot-password",
+  "/reset-password.html": "/reset-password",
+  "/verify-email.html": "/verify-email",
+  "/dashboard.html": "/dashboard",
 };
 
 export default function App() {
@@ -40,26 +40,25 @@ export default function App() {
     <AuthProvider>
       <RouteMeta />
       <Routes>
-        {Object.entries(ALIASES).map(([from, to]) => (
+        {Object.entries(LEGACY).map(([from, to]) => (
           <Route key={from} path={from} element={<Navigate to={to} replace />} />
         ))}
 
-        <Route path="register.html" element={<Register />} />
-        <Route path="login.html" element={<Login />} />
-        <Route path="forgot-password.html" element={<ForgotPassword />} />
-        <Route path="reset-password.html" element={<ResetPassword />} />
-        <Route path="verify-email.html" element={<VerifyEmail />} />
-        <Route path="dashboard.html" element={<Dashboard />} />
+        <Route path="register" element={<Register />} />
+        <Route path="login" element={<Login />} />
+        <Route path="forgot-password" element={<ForgotPassword />} />
+        <Route path="reset-password" element={<ResetPassword />} />
+        <Route path="verify-email" element={<VerifyEmail />} />
+        <Route path="dashboard" element={<Dashboard />} />
 
         <Route element={<Layout />}>
           <Route index element={<Home />} />
-          <Route path="src/index.html" element={<Home />} />
-          <Route path="services.html" element={<Services />} />
-          <Route path="projects.html" element={<Projects />} />
-          <Route path="about.html" element={<About />} />
-          <Route path="who-we-help.html" element={<Clients />} />
-          <Route path="contact.html" element={<Contact />} />
-          <Route path="start-a-project.html" element={<StartProject />} />
+          <Route path="services" element={<Services />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="about" element={<About />} />
+          <Route path="who-we-help" element={<Clients />} />
+          <Route path="contact" element={<Contact />} />
+          <Route path="start-a-project" element={<StartProject />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

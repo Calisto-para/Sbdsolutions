@@ -26,7 +26,7 @@ export default function Dashboard() {
   }
 
   if (!user) {
-    return <Navigate to="/login.html" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   const tab = params.get("tab") || "overview";
@@ -72,7 +72,7 @@ export default function Dashboard() {
             className="dash-side-link"
             onClick={async () => {
               await logout();
-              window.location.href = "/login.html";
+              window.location.href = "/login";
             }}
           >
             Sign out

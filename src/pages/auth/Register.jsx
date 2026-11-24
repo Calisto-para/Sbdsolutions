@@ -52,7 +52,7 @@ export default function Register() {
       intro="Set up your SBD AI Solutions account to build, train and test AI assistants for your business."
       footer={
         <span>
-          Already registered? <Link to="/login.html">Sign in</Link>
+          Already registered? <Link to="/login">Sign in</Link>
         </span>
       }
     >

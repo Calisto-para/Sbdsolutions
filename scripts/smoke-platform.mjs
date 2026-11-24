@@ -187,7 +187,7 @@ const other = await call(`/api/conversations/00000000-0000-0000-0000-00000000000
 check("unknown conversation 404", other.status === 404);
 
 console.log("static pages");
-for (const page of ["/dashboard.html", "/register.html", "/login.html", "/dashboard", "/register"]) {
+for (const page of ["/dashboard", "/register", "/login", "/services", "/services.html", "/dashboard.html"]) {
   const response = await fetch(`${BASE}${page}`);
   check(`${page} 200 html`, response.status === 200 && (await response.text()).includes("SBD AI Solutions"));
 }

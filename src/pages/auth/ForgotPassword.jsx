@@ -35,7 +35,7 @@ export default function ForgotPassword() {
       intro="Enter the email address on your account and we will send a link to choose a new password."
       footer={
         <span>
-          Remembered it? <Link to="/login.html">Back to sign in</Link>
+          Remembered it? <Link to="/login">Back to sign in</Link>
         </span>
       }
     >

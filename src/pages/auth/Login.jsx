@@ -24,7 +24,7 @@ export default function Login() {
 
     try {
       await login(form);
-      navigate("/dashboard.html");
+      navigate("/dashboard");
     } catch (err) {
       setError(err.message);
       setUnverified(err.code === "EMAIL_UNVERIFIED");
@@ -49,7 +49,7 @@ export default function Login() {
       intro="Sign in to manage your AI assistants, training material and conversations."
       footer={
         <span>
-          New here? <Link to="/register.html">Create an account</Link>
+          New here? <Link to="/register">Create an account</Link>
         </span>
       }
     >
@@ -65,7 +65,7 @@ export default function Login() {
         </Field>
 
         <div className="auth-row">
-          <Link className="auth-link" to="/forgot-password.html">Forgot password?</Link>
+          <Link className="auth-link" to="/forgot-password">Forgot password?</Link>
           {unverified ? (
             <button className="auth-link auth-link--button" type="button" onClick={resend}>Resend verification email</button>
           ) : null}

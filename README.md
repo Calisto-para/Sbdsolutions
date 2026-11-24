@@ -9,23 +9,23 @@ front, Express + Postgres on the back, OpenAI for assistant replies.
 | URL                     | Component                     |
 | ----------------------- | ----------------------------- |
 | `/`                     | `src/pages/Home.jsx`          |
-| `/services.html`        | `src/pages/Services.jsx`      |
-| `/projects.html`        | `src/pages/Projects.jsx`      |
-| `/about.html`           | `src/pages/About.jsx`         |
-| `/who-we-help.html`     | `src/pages/Clients.jsx`       |
-| `/contact.html`         | `src/pages/Contact.jsx`       |
-| `/start-a-project.html` | `src/pages/StartProject.jsx`  |
+| `/services`            | `src/pages/Services.jsx`      |
+| `/projects`        | `src/pages/Projects.jsx`      |
+| `/about`           | `src/pages/About.jsx`         |
+| `/who-we-help`     | `src/pages/Clients.jsx`       |
+| `/contact`         | `src/pages/Contact.jsx`       |
+| `/start-a-project` | `src/pages/StartProject.jsx`  |
 
 ## Customer platform
 
 | URL                        | Component |
 | -------------------------- | --------- |
-| `/register.html`           | `src/pages/auth/Register.jsx` |
-| `/login.html`              | `src/pages/auth/Login.jsx` |
-| `/forgot-password.html`    | `src/pages/auth/ForgotPassword.jsx` |
-| `/reset-password.html`     | `src/pages/auth/ResetPassword.jsx` |
-| `/verify-email.html`       | `src/pages/auth/VerifyEmail.jsx` |
-| `/dashboard.html`          | `src/pages/dashboard/Dashboard.jsx` |
+| `/register`           | `src/pages/auth/Register.jsx` |
+| `/login`              | `src/pages/auth/Login.jsx` |
+| `/forgot-password`    | `src/pages/auth/ForgotPassword.jsx` |
+| `/reset-password`     | `src/pages/auth/ResetPassword.jsx` |
+| `/verify-email`       | `src/pages/auth/VerifyEmail.jsx` |
+| `/dashboard`          | `src/pages/dashboard/Dashboard.jsx` |
 
 The dashboard has five sections, switched with the `?tab=` query parameter so
 every URL is a real file (no rewrite rules needed):

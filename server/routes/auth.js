@@ -39,7 +39,7 @@ async function issueVerification(user) {
       where id = $1`,
     [user.id, hashToken(token), VERIFY_HOURS]
   );
-  const link = `${env.appUrl}/verify-email.html?token=${token}`;
+  const link = `${env.appUrl}/verify-email?token=${token}`;
   const result = await sendVerificationEmail(user, link);
   return { link, ...result };
 }
@@ -269,7 +269,7 @@ router.post("/forgot-password", async (req, res, next) => {
           where id = $1`,
         [user.id, hashToken(token), RESET_MINUTES]
       );
-      const link = `${env.appUrl}/reset-password.html?token=${token}`;
+      const link = `${env.appUrl}/reset-password?token=${token}`;
       const result = await sendPasswordResetEmail(user, link);
       return res.json({
         ok: true,

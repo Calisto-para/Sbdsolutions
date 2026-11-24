@@ -38,21 +38,21 @@ export default function VerifyEmail() {
       {state === "verified" ? (
         <div className="form-alert form-alert--ok" role="status">
           <p>{message}</p>
-          <Link className="btn btn--primary btn--block" to="/dashboard.html">Go to my dashboard</Link>
+          <Link className="btn btn--primary btn--block" to="/dashboard">Go to my dashboard</Link>
         </div>
       ) : null}
 
       {state === "failed" ? (
         <div className="form-alert form-alert--error" role="alert">
           <p>{message}</p>
-          <Link className="auth-link" to="/login.html">Back to sign in</Link>
+          <Link className="auth-link" to="/login">Back to sign in</Link>
         </div>
       ) : null}
 
       {state === "missing" ? (
         <div className="form-alert form-alert--error" role="alert">
           <p>This page needs the link from your verification email.</p>
-          <Link className="auth-link" to="/login.html">Back to sign in</Link>
+          <Link className="auth-link" to="/login">Back to sign in</Link>
         </div>
       ) : null}
 

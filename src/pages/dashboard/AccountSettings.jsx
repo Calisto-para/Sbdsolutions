@@ -168,7 +168,7 @@ export default function AccountSettings() {
             type="button"
             onClick={async () => {
               await logout();
-              window.location.href = "/login.html";
+              window.location.href = "/login";
             }}
           >
             Sign out

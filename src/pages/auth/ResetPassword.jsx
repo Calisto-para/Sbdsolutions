@@ -26,7 +26,7 @@ export default function ResetPassword() {
     try {
       await api("/auth/reset-password", { method: "POST", body: { token, ...form } });
       await refresh();
-      navigate("/dashboard.html");
+      navigate("/dashboard");
     } catch (err) {
       setErrors(err.fieldErrors || {});
       setError(err.message);
@@ -40,7 +40,7 @@ export default function ResetPassword() {
       <AuthShell
         title="Reset link missing"
         intro="This page needs the link from your reset email."
-        footer={<span><Link to="/forgot-password.html">Request a new link</Link></span>}
+        footer={<span><Link to="/forgot-password">Request a new link</Link></span>}
       >
         <div className="form-alert form-alert--error">No reset token was found in this link.</div>
       </AuthShell>
@@ -51,7 +51,7 @@ export default function ResetPassword() {
     <AuthShell
       title="Choose a new password"
       intro="Pick something you have not used before. You will be signed in straight away."
-      footer={<span><Link to="/login.html">Back to sign in</Link></span>}
+      footer={<span><Link to="/login">Back to sign in</Link></span>}
     >
       {error ? <div className="form-alert form-alert--error" role="alert">{error}</div> : null}
 

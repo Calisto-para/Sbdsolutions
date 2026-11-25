@@ -134,6 +134,7 @@ create table if not exists plans (
 );
 /* Prices and names are kept in step with this list on every boot, so changing
    them here is enough — existing subscribers move to the new price/limits. */
+alter table plans add column if not exists token_limit integer not null default 0;
 alter table plans add column if not exists custom boolean not null default false;
 alter table plans add column if not exists billing_note text not null default '';
 alter table plans add column if not exists token_price_hidden boolean not null default false;

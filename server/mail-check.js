@@ -93,7 +93,7 @@ async function brevoCheck() {
     verifiedDomains: senders.filter((sender) => sender.active).map((sender) => sender.email),
     message: match?.active
       ? `Brevo has ${match.email} verified as a sender.`
-      : `Brevo has not verified ${address} as a sender. Add it under Senders & IP → Senders in Brevo and confirm the email Brevo sends you.`,
+      : `Brevo has not verified ${address}. Verified senders: ${senders.filter((s) => s.active).map((s) => s.email).join(", ") || "none"}.`,
   };
 }
 
@@ -124,7 +124,9 @@ const normalise = (message) => {
 
 async function computeSnapshot() {
   const provider = emailProviders()[0] || "none";
-  const value = { provider, keyValid: null, senderVerified: null, verifiedSenders: [], reason: "" };
+  /* Homepage-visible, so it carries booleans and a reason only — the verified
+     addresses themselves stay in the operator dashboard. */
+  const value = { provider, keyValid: null, senderVerified: null, verifiedSenderCount: 0, reason: "" };
   try {
     if (provider === "brevo" && env.mail.brevo.apiKey) {
       const origin = base(env.mail.brevo.apiUrl, "https://api.brevo.com");
@@ -132,15 +134,21 @@ async function computeSnapshot() {
         await getJson(`${origin}/v3/account`, { "api-key": env.mail.brevo.apiKey });
         value.keyValid = true;
       } catch (error) {
-        value.keyValid = false;
-        value.reason = normalise(error.message);
-        return value;
+        /* Only an auth answer is conclusive here; other failures fall through to
+           the senders call, which is the check that actually matters. */
+        if (normalise(error.message) === "key_rejected") {
+          value.keyValid = false;
+          value.reason = "key_rejected";
+          return value;
+        }
       }
       const data = await getJson(`${origin}/v3/senders`, { "api-key": env.mail.brevo.apiKey });
+      if (value.keyValid === null) value.keyValid = true;
       const senders = Array.isArray(data) ? data : data.senders || [];
-      value.verifiedSenders = senders.filter((sender) => sender.active).map((sender) => sender.email);
-      value.senderVerified = value.verifiedSenders.some(
-        (email) => String(email).toLowerCase() === senderAddress().toLowerCase()
+      const active = senders.filter((sender) => sender.active);
+      value.verifiedSenderCount = active.length;
+      value.senderVerified = active.some(
+        (sender) => String(sender.email).toLowerCase() === senderAddress().toLowerCase()
       );
       if (!value.senderVerified) value.reason = "sender_not_verified";
     } else if (provider === "resend" && env.mail.resend.apiKey) {
@@ -150,6 +158,7 @@ async function computeSnapshot() {
         });
         value.keyValid = true;
         const domains = Array.isArray(data) ? data : data.data || [];
+        value.verifiedSenderCount = domains.filter((domain) => domain.status === "verified").length;
         value.senderVerified = domains.some(
           (domain) => domain.status === "verified" && domain.name === senderDomain()
         );
@@ -166,7 +175,9 @@ async function computeSnapshot() {
 }
 
 export function emailHealthSnapshot() {
-  const stale = !snapshot || Date.now() - snapshot.at > 5 * 60 * 1000;
+  /* A failed probe is retried quickly; a good one is cached for five minutes. */
+  const ttl = snapshot?.value?.reason === "check_failed" ? 30 * 1000 : 5 * 60 * 1000;
+  const stale = !snapshot || Date.now() - snapshot.at > ttl;
   if (stale && !inFlight) {
     inFlight = computeSnapshot()
       .then((value) => {
@@ -228,5 +239,13 @@ export async function mailDiagnostics() {
   result.summary = working
     ? `Sending through ${working.provider}.`
     : result.checks[0]?.message || "The email provider rejected the sender.";
+
+  /* Name the fix when the provider has a verified address the app is not using. */
+  const failing = result.checks.find((check) => !check.ok && check.verifiedDomains?.length);
+  if (!result.ok && failing) {
+    const suggestion = failing.verifiedDomains[0];
+    result.hint = `Set MAIL_FROM to "SBD AI Solutions <${suggestion}>" in the service environment (or verify ${result.sender} in ${failing.provider}), then restart. Currently it sends from ${result.sender}.`;
+  }
+
   return result;
 }

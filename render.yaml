@@ -19,6 +19,14 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-4o-mini
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_REPLY_TO
+        value: sbdiam.solutions@gmail.com
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

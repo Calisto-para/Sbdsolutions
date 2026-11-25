@@ -5,7 +5,7 @@ export default function Home() {
     <>
 <section className="hero">
     <div className="hero-visual" aria-hidden="true">
-      <img src="/assets/hero-ai.svg" alt="" />
+      <img src="/assets/sbd-ai-robot.png" alt="" width="755" height="400" />
     </div>
     <div className="container hero-inner">
       <div className="hero-copy reveal">
@@ -84,7 +84,7 @@ export default function Home() {
         </div>
       </div>
       <div className="why-media reveal">
-        <img src="/assets/office.svg" alt="Illustration of a modern corporate office building" />
+        <img src="/assets/sbd-office-building.png" alt="The SBD AI Solutions office building" width="595" height="190" />
       </div>
     </div>
   </section>

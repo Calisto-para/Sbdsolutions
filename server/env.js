@@ -16,18 +16,33 @@ export const env = {
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     baseUrl: process.env.OPENAI_BASE_URL || "",
   },
-  smtp: {
-    host: process.env.SMTP_HOST || "",
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: bool(process.env.SMTP_SECURE),
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
+  mail: {
+    /* brevo | resend | smtp. Empty means: first configured provider wins. */
+    provider: (process.env.EMAIL_PROVIDER || "").trim().toLowerCase(),
     from: process.env.MAIL_FROM || "SBD AI Solutions <sbdiam.solutions@gmail.com>",
+    replyTo: process.env.MAIL_REPLY_TO || "",
+    brevo: {
+      apiKey: process.env.BREVO_API_KEY || "",
+      apiUrl: process.env.BREVO_API_URL || "https://api.brevo.com/v3/smtp/email",
+    },
+    resend: {
+      apiKey: process.env.RESEND_API_KEY || "",
+      apiUrl: process.env.RESEND_API_URL || "https://api.resend.com/emails",
+    },
+    smtp: {
+      host: process.env.SMTP_HOST || "",
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: bool(process.env.SMTP_SECURE),
+      user: process.env.SMTP_USER || "",
+      pass: process.env.SMTP_PASS || "",
+    },
   },
 };
 
 export const dbConfigured = Boolean(env.databaseUrl);
-export const emailConfigured = Boolean(env.smtp.host);
+export const emailConfigured = Boolean(
+  env.mail.brevo.apiKey || env.mail.resend.apiKey || env.mail.smtp.host
+);
 export const aiConfigured = Boolean(env.openai.apiKey);
 
 if (env.isProd && env.sessionSecret.startsWith("dev-only")) {

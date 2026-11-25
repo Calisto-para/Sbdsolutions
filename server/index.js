@@ -6,6 +6,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
+import { emailProviderName } from "./mail.js";
 import { migrate } from "./migrate.js";
 import { dbKind, dbState } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -37,6 +38,7 @@ app.get("/api/health", (req, res) => {
     database: dbKind() || "not-initialised",
     dbReady: dbState.ready,
     emailConfigured,
+    emailProvider: emailProviderName,
     aiConfigured,
     environment: env.nodeEnv,
   });
@@ -111,7 +113,13 @@ const port = env.port;
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(`[server] listening on ${port}`);
   console.log(`[server] database: ${dbConfigured ? "Postgres via DATABASE_URL" : `local PGlite (${env.pgliteDir}) — data is not durable`}`);
-  console.log(`[server] email: ${emailConfigured ? "SMTP configured" : "not configured — verification links are logged and shown on screen"}`);
+  console.log(
+    `[server] email: ${
+      emailConfigured
+        ? `${emailProviderName} configured`
+        : "not configured — verification links are logged and shown on screen"
+    }`
+  );
   console.log(`[server] AI: ${aiConfigured ? `OpenAI ${env.openai.model}` : "not configured — add OPENAI_API_KEY"}`);
   if (env.isProd && !dbConfigured) {
     console.error("[db] DATABASE_URL is not set in production — data will be lost on every deploy.");

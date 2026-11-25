@@ -86,14 +86,41 @@ Copy `.env.example` to `.env`:
 | `SESSION_SECRET` | long random string used to sign sessions |
 | `APP_URL` | public origin, used in verification and reset links |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | assistant replies (default `gpt-4o-mini`) |
-| `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM` | verification and reset email |
+| `BREVO_API_KEY` | Brevo API key — the default transactional sender |
+| `RESEND_API_KEY` | Resend API key — used if Brevo fails or is not set |
+| `EMAIL_PROVIDER` | `brevo` (default), `resend` or `smtp` — which provider is tried first |
+| `MAIL_FROM`, `MAIL_REPLY_TO` | sender identity and reply-to for verification and reset email |
+| `SMTP_HOST/PORT/USER/PASS` | optional SMTP fallback, used only when no API key is set |
+
+### Email delivery
+
+`server/mail.js` sends verification and password-reset email through HTTP APIs,
+so no SMTP host is needed:
+
+- **Brevo** (`BREVO_API_KEY`) posts to `https://api.brevo.com/v3/smtp/email`
+- **Resend** (`RESEND_API_KEY`) posts to `https://api.resend.com/emails`
+
+`EMAIL_PROVIDER` picks the first attempt; the other configured provider is
+tried automatically if that call fails, and SMTP is the last resort. With no
+provider configured, links are logged and shown on screen in development.
+
+`MAIL_FROM` must use a domain (or verified sender) the chosen provider allows:
+Brevo verifies the sender address in its dashboard, Resend needs a verified
+domain for anything other than `onboarding@resend.dev`.
 
 ## Build and hosting
 
-`npm run build` builds the app, prerenders every route to its own `.html` file
-and copies the output to the repository root (the current Render static site
-publishes the repo root and runs no build). Run it before committing any
-source change; never hand-edit the generated root `*.html` or `assets/`.
+`npm run build` builds the React app, writes the single-page shell plus one
+`.html` alias per old route, and copies the output to the repository root (a
+host that publishes the repo root without building still works). Run it before
+committing any source change; never hand-edit the generated root `*.html` or
+`assets/`.
+
+Brand artwork lives in `public/assets/`: `sbd-ai-solutions-logo.png` (full
+lockup, header and auth pages), `sbd-ai-mark.png` (swirl only, favicon),
+`sbd-ai-robot.png` (home hero) and `sbd-office-building.png` (home office
+band). `public/sbd-ai-solutions-icon.png` is the app/touch icon used on dark
+surfaces such as the footer and dashboard sidebar.
 
 The platform needs a Node server, which a static site cannot run:
 

@@ -95,11 +95,13 @@ export default function Header() {
     <header className={`site-header${navOpen ? " nav-open" : ""}`} ref={headerRef}>
       <div className="header-inner">
         <Link className="brand" to="/" aria-label="SBD AI Solutions home">
-          <img className="brand-mark" src="/assets/logo-mark.svg" alt="" width="46" height="46" />
-          <span className="brand-text">
-            <span className="brand-name">SBD AI Solutions</span>
-            <span className="brand-tag">Intelligent Technology. Smarter Business.</span>
-          </span>
+          <img
+            className="brand-logo"
+            src="/assets/sbd-ai-solutions-logo.png"
+            alt="SBD AI Solutions — Intelligent Technology. Smarter Business."
+            width="201"
+            height="52"
+          />
         </Link>
         <nav className="nav" id="primary-navigation" aria-label="Primary navigation">
           <Link to="/" {...linkProps(pathname === "/")}>Home</Link>

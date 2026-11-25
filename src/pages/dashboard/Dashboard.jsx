@@ -47,7 +47,7 @@ export default function Dashboard() {
     <div className="dash">
       <aside className={`dash-side${menuOpen ? " is-open" : ""}`}>
         <Link className="dash-brand" to="/">
-          <img src="/assets/logo-mark.svg" alt="" width="34" height="34" />
+          <img className="dash-brand-tile" src="/sbd-ai-solutions-icon.png" alt="" width="34" height="34" />
           <span>SBD AI Solutions</span>
         </Link>
         <nav className="dash-nav" aria-label="Dashboard sections">

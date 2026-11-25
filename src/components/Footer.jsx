@@ -9,7 +9,7 @@ export default function Footer() {
         <div className="footer-grid">
           <div className="footer-brand">
             <Link className="brand" to="/" aria-label="SBD AI Solutions home">
-              <img className="brand-mark" src="/assets/logo-mark.svg" alt="" width="42" height="42" />
+              <img className="brand-mark brand-tile" src="/sbd-ai-solutions-icon.png" alt="" width="42" height="42" />
               <span className="brand-text">
                 <span className="brand-name">SBD AI Solutions</span>
                 <span className="brand-tag">Intelligent Technology. Smarter Business.</span>

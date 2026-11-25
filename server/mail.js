@@ -1,30 +1,131 @@
 import nodemailer from "nodemailer";
-import { env, emailConfigured } from "./env.js";
+import { env } from "./env.js";
 
-let transporter = null;
+const REQUEST_TIMEOUT_MS = 15000;
 
-function getTransporter() {
-  if (!emailConfigured) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
-      secure: env.smtp.secure,
-      auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
-    });
+/* MAIL_FROM looks like `SBD AI Solutions <hello@example.com>`. Brevo needs the
+   name and address separately; Resend and SMTP take the whole string back. */
+function parseFrom(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(.*?)\s*<([^>]+)>$/);
+  if (!match) {
+    return { name: "SBD AI Solutions", email: raw, formatted: raw };
   }
-  return transporter;
+  const name = match[1].replace(/^"|"$/g, "").trim() || "SBD AI Solutions";
+  const email = match[2].trim();
+  return { name, email, formatted: `${name} <${email}>` };
 }
 
+const from = parseFrom(env.mail.from);
+
+let smtpTransport = null;
+function smtp() {
+  if (!smtpTransport) {
+    smtpTransport = nodemailer.createTransport({
+      host: env.mail.smtp.host,
+      port: env.mail.smtp.port,
+      secure: env.mail.smtp.secure,
+      auth: env.mail.smtp.user ? { user: env.mail.smtp.user, pass: env.mail.smtp.pass } : undefined,
+    });
+  }
+  return smtpTransport;
+}
+
+async function postJson(url, headers, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json", ...headers },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} — ${body.slice(0, 300) || response.statusText}`);
+  }
+  return body;
+}
+
+/* Brevo — POST /v3/smtp/email. Authenticates with the `api-key` header. */
+async function sendWithBrevo({ to, subject, text, html }) {
+  return postJson(
+    env.mail.brevo.apiUrl,
+    { "api-key": env.mail.brevo.apiKey },
+    {
+      sender: { name: from.name, email: from.email },
+      to: [{ email: to }],
+      ...(env.mail.replyTo ? { replyTo: { email: env.mail.replyTo } } : {}),
+      subject,
+      htmlContent: html,
+      textContent: text,
+    }
+  );
+}
+
+/* Resend — POST /emails. Authenticates with a bearer token. */
+async function sendWithResend({ to, subject, text, html }) {
+  return postJson(
+    env.mail.resend.apiUrl,
+    { authorization: `Bearer ${env.mail.resend.apiKey}` },
+    {
+      from: from.formatted,
+      to: [to],
+      ...(env.mail.replyTo ? { reply_to: env.mail.replyTo } : {}),
+      subject,
+      html,
+      text,
+    }
+  );
+}
+
+async function sendWithSmtp({ to, subject, text, html }) {
+  await smtp().sendMail({ from: from.formatted, to, subject, text, html });
+}
+
+const SENDERS = { brevo: sendWithBrevo, resend: sendWithResend, smtp: sendWithSmtp };
+const FALLBACK_ORDER = ["brevo", "resend", "smtp"];
+
+const isConfigured = (name) => {
+  if (name === "brevo") return Boolean(env.mail.brevo.apiKey);
+  if (name === "resend") return Boolean(env.mail.resend.apiKey);
+  return Boolean(env.mail.smtp.host);
+};
+
+/* EMAIL_PROVIDER chooses the first attempt; the remaining configured
+   providers are tried in order, so a Brevo outage still sends through Resend. */
+export function emailProviders() {
+  const preferred = env.mail.provider;
+  const order = [];
+  if (SENDERS[preferred] && isConfigured(preferred)) order.push(preferred);
+  for (const name of FALLBACK_ORDER) {
+    if (isConfigured(name) && !order.includes(name)) order.push(name);
+  }
+  return order;
+}
+
+export const emailProviderName = emailProviders()[0] || "none";
+
 async function send({ to, subject, text, html, link }) {
-  const transport = getTransporter();
-  if (!transport) {
-    console.log(`[mail] SMTP not configured. ${subject} -> ${to}`);
+  const order = emailProviders();
+  if (!order.length) {
+    console.log(`[mail] No email provider configured. ${subject} -> ${to}`);
     console.log(`[mail] link: ${link}`);
     return { delivered: false, previewUrl: link };
   }
-  await transport.sendMail({ from: env.smtp.from, to, subject, text, html });
-  return { delivered: true };
+
+  const failures = [];
+  for (const name of order) {
+    try {
+      await SENDERS[name]({ to, subject, text, html });
+      console.log(`[mail] "${subject}" delivered to ${to} via ${name}`);
+      return { delivered: true, provider: name };
+    } catch (error) {
+      failures.push(`${name}: ${error.message}`);
+      console.error(`[mail] ${name} failed for ${to} — ${error.message}`);
+    }
+  }
+
+  console.error(`[mail] every provider failed for ${to} — ${failures.join(" | ")}`);
+  return { delivered: false, previewUrl: link };
 }
 
 export function sendVerificationEmail(user, link) {

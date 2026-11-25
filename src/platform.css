@@ -1326,3 +1326,10 @@
     display: none;
   }
 }
+
+.dash-brand-tile {
+  border-radius: 9px;
+  background: #fff;
+  flex: none;
+  object-fit: contain;
+}

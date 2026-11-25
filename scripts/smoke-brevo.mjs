@@ -3,7 +3,7 @@
    Start the API with:
      EMAIL_PROVIDER=brevo BREVO_API_KEY=xkeysib-stub
      BREVO_API_URL=http://127.0.0.1:4032/v3/smtp/email
-     MAIL_FROM="SBD AI Solutions <sbdiam.solutions@gmail.com>" */
+     MAIL_FROM="SBD AI Solutions <support.sbiamautos@gmail.com>" */
 import http from "node:http";
 
 const BASE = process.argv[2] || "http://127.0.0.1:3008";
@@ -17,7 +17,7 @@ const stub = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(
       JSON.stringify({
-        senders: [{ id: 1, email: "sbdiam.solutions@gmail.com", active: true }],
+        senders: [{ id: 1, email: "support.sbiamautos@gmail.com", active: true }],
       })
     );
   }
@@ -83,7 +83,7 @@ check("registration delivered through Brevo", admin.data.emailDelivered === true
 const link = String(lastPayload?.htmlContent || "").match(/href="([^"]+)"/)?.[1] || "";
 check("verification link reached Brevo", link.includes("/verify-email?token="), link.slice(0, 70));
 check("Brevo api-key header used", lastHeaders["api-key"] === "xkeysib-stub", String(lastHeaders["api-key"]));
-check("sender is the verified address", lastPayload?.sender?.email === "sbdiam.solutions@gmail.com", JSON.stringify(lastPayload?.sender));
+check("sender is the verified address", lastPayload?.sender?.email === "support.sbiamautos@gmail.com", JSON.stringify(lastPayload?.sender));
 check("recipient is the client", lastPayload?.to?.[0]?.email === ADMIN_EMAIL, JSON.stringify(lastPayload?.to));
 check("subject is set", /verify your sbd ai solutions account/i.test(lastPayload?.subject || ""), String(lastPayload?.subject));
 
@@ -95,14 +95,31 @@ const cookie = login.cookie;
 const status = await call("/api/admin/email", { cookie });
 check("operator check reports working", status.data.ok === true, JSON.stringify(status.data).slice(0, 200));
 check("operator check names Brevo", status.data.provider === "brevo", String(status.data.provider));
-check("verified sender is listed", (status.data.checks?.[0]?.verifiedDomains || []).includes("sbdiam.solutions@gmail.com"), JSON.stringify(status.data.checks));
+check("verified sender is listed", (status.data.checks?.[0]?.verifiedDomains || []).includes("support.sbiamautos@gmail.com"), JSON.stringify(status.data.checks));
 
 const test = await call("/api/admin/email-test", { method: "POST", cookie });
 check("test email goes through Brevo", test.data.delivered === true && test.data.provider === "brevo", JSON.stringify(test.data));
 
-const client = await register(`client${stamp}@example.com`, "Client");
+const clientEmail = `client${stamp}@example.com`;
+const client = await register(clientEmail, "Client");
 check("client registration delivered", client.data.emailDelivered === true, JSON.stringify(client.data));
 check("client told to check inbox", /check your inbox/i.test(client.data.message || ""), client.data.message);
+check("verification email addressed to the client", lastPayload?.to?.[0]?.email === clientEmail, JSON.stringify(lastPayload?.to));
+check(
+  "client verification link is theirs",
+  String(lastPayload?.htmlContent || "").includes("/verify-email?token=")
+);
+
+console.log("password reset");
+const forgot = await call("/api/auth/forgot-password", { method: "POST", body: { email: clientEmail } });
+check("reset request accepted", forgot.status === 200 && forgot.data.emailDelivered === true, JSON.stringify(forgot.data));
+check("reset email addressed to the client", lastPayload?.to?.[0]?.email === clientEmail, JSON.stringify(lastPayload?.to));
+check("reset subject", /reset your sbd ai solutions password/i.test(lastPayload?.subject || ""), String(lastPayload?.subject));
+check(
+  "reset link points at the reset page",
+  String(lastPayload?.htmlContent || "").includes("/reset-password?token=")
+);
+check("admin address not used as recipient", lastPayload?.to?.[0]?.email !== ADMIN_EMAIL, JSON.stringify(lastPayload?.to));
 
 stub.close();
 console.log(failures === 0 ? "\nALL BREVO CHECKS PASSED" : `\n${failures} BREVO CHECKS FAILED`);

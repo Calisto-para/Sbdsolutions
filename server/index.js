@@ -43,6 +43,15 @@ app.get("/api/health", (req, res) => {
     emailProvider: emailProviderName,
     emailProviders: emailProviders(),
     emailProviderRequested: env.mail.provider || "",
+    /* Which sender variables this service can actually see. Presence only — no values. */
+    emailEnv: {
+      BREVO_API_KEY: Boolean(process.env.BREVO_API_KEY),
+      BRAVO_API_KEY: Boolean(process.env.BRAVO_API_KEY),
+      RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
+      SMTP_HOST: Boolean(process.env.SMTP_HOST),
+      MAIL_FROM: process.env.MAIL_FROM ? "set" : "default",
+      EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || "auto",
+    },
     aiConfigured,
     environment: env.nodeEnv,
   });

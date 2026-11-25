@@ -33,7 +33,9 @@ export const env = {
     from: process.env.MAIL_FROM || "SBD AI Solutions <sbdiam.solutions@gmail.com>",
     replyTo: process.env.MAIL_REPLY_TO || "",
     brevo: {
-      apiKey: process.env.BREVO_API_KEY || "",
+      /* BREVO is often written as "bravo"; accept both so a typed variable name
+         does not silently disable delivery. */
+      apiKey: process.env.BREVO_API_KEY || process.env.BRAVO_API_KEY || "",
       apiUrl: process.env.BREVO_API_URL || "https://api.brevo.com/v3/smtp/email",
     },
     resend: {

@@ -12,7 +12,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: APP_URL
-        value: https://sbdsolutions.onrender.com
+        value: https://sbdaisolutions.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: OPENAI_API_KEY

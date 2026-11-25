@@ -1,0 +1,492 @@
+/* End-to-end checks for the chatbot, leads, conversation management, admin
+   controls and subscriptions. Runs against the local API with a stubbed AI:
+     OPENAI_API_KEY=stub OPENAI_BASE_URL=http://127.0.0.1:4035/v1
+   Usage: node scripts/smoke-features.mjs [baseUrl] */
+import http from "node:http";
+
+const BASE = process.argv[2] || "http://127.0.0.1:3021";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "ops-features@example.com";
+const stamp = Date.now();
+let failures = 0;
+let lastAiRequest = "";
+
+/* A small, valid one-page PDF with a real text layer, so the upload path is
+   exercised without keeping a binary fixture in the repository. */
+function buildPdf(lines) {
+  const body = lines
+    .map((line, index) => `${index === 0 ? "72 760 Td" : "0 -18 Td"} (${String(line).replace(/([()\\])/g, "\\$1")}) Tj`)
+    .join("\n");
+  const content = `BT /F1 12 Tf\n${body}\nET\n`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}endstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+async function uploadPdf(cookie, assistantId, buffer, filename) {
+  const fd = new FormData();
+  fd.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
+  return call(`/api/assistants/${assistantId}/knowledge/pdf`, { method: "POST", cookie, form: fd });
+}
+
+const check = (label, condition, detail = "") => {
+  if (condition) console.log(`  ok   ${label}`);
+  else {
+    failures += 1;
+    console.log(`  FAIL ${label} ${detail}`);
+  }
+};
+
+const ai = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => (body += chunk));
+  req.on("end", () => {
+    lastAiRequest = body;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: "stub",
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: "stub",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Thanks! I can help with that." },
+          },
+        ],
+      })
+    );
+  });
+});
+await new Promise((resolve) => ai.listen(4035, "127.0.0.1", resolve));
+
+/* Paystack stand-in: remembers the amount for each reference and confirms it. */
+const paystackAmounts = new Map();
+const paystack = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => (body += chunk));
+  req.on("end", () => {
+    res.setHeader("content-type", "application/json");
+    if (req.method === "POST" && req.url === "/transaction/initialize") {
+      const parsed = JSON.parse(body || "{}");
+      paystackAmounts.set(parsed.reference, parsed.amount);
+      return res.end(
+        JSON.stringify({
+          status: true,
+          data: {
+            authorization_url: `https://checkout.example/pay/${parsed.reference}`,
+            access_code: "stub",
+            reference: parsed.reference,
+          },
+        })
+      );
+    }
+    const verify = String(req.url || "").match(/^\/transaction\/verify\/(.+)$/);
+    if (req.method === "GET" && verify) {
+      const reference = decodeURIComponent(verify[1]);
+      const amount = paystackAmounts.get(reference);
+      if (!amount) {
+        res.statusCode = 404;
+        return res.end(JSON.stringify({ status: false, message: "Transaction not found" }));
+      }
+      return res.end(
+        JSON.stringify({ status: true, data: { status: "success", amount, currency: "USD", reference } })
+      );
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ status: false, message: "Not found" }));
+  });
+});
+await new Promise((resolve) => paystack.listen(4037, "127.0.0.1", resolve));
+
+async function call(path, { method = "GET", body, cookie = "", form } = {}) {
+  const response = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { ...(body ? { "content-type": "application/json" } : {}), cookie },
+    body: form || (body ? JSON.stringify(body) : undefined),
+  });
+  const setCookie = response.headers.getSetCookie?.() || [];
+  const nextCookie = setCookie.length ? setCookie.map((v) => v.split(";")[0]).join("; ") : cookie;
+  const text = await response.text();
+  let data = {};
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { text };
+  }
+  return { status: response.status, data, cookie: nextCookie, headers: response.headers, text };
+}
+
+const account = (email, name) => ({
+  fullName: name,
+  businessName: `${name} Ltd`,
+  email,
+  phone: "+2348012345678",
+  country: "Nigeria",
+  password: "Password123",
+  confirmPassword: "Password123",
+});
+
+async function registerAndLogin(email, name) {
+  const registration = await call("/api/auth/register", { method: "POST", body: account(email, name) });
+  if (registration.data.previewUrl) {
+    const token = new URL(registration.data.previewUrl).searchParams.get("token");
+    await call("/api/auth/verify-email", { method: "POST", body: { token } });
+  }
+  return call("/api/auth/login", { method: "POST", body: { email, password: "Password123" } });
+}
+
+console.log("customer account");
+const clientEmail = `client${stamp}@example.com`;
+const login = await registerAndLogin(clientEmail, "Feature Client");
+const cookie = login.cookie;
+check("client signs in", login.status === 200, JSON.stringify(login.data));
+
+console.log("payment gate");
+const initialPlan = await call("/api/subscriptions", { cookie });
+check("registration is not automatically paid", initialPlan.data.active === false && initialPlan.data.status === "unpaid", JSON.stringify({ active: initialPlan.data.active, status: initialPlan.data.status }));
+check("plan catalogue listed", initialPlan.data.plan?.id === "starter" && initialPlan.data.plans?.length === 4, JSON.stringify(initialPlan.data.plan));
+check(
+  "prices are 100, 200, 400 and enterprise is custom",
+  initialPlan.data.plans.map((plan) => plan.price).slice(0, 3).join(",") === "100,200,400" &&
+    initialPlan.data.plans[3].custom === true &&
+    /agreed/i.test(initialPlan.data.plans[3].billingNote),
+  JSON.stringify(initialPlan.data.plans.map((plan) => [plan.id, plan.price, plan.custom]))
+);
+
+const invoice = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "starter" } });
+check(
+  "choosing a plan opens an invoice instead of activating",
+  invoice.status === 201 && invoice.data.payment?.status === "pending" && invoice.data.active === false,
+  JSON.stringify(invoice.data).slice(0, 200)
+);
+check("an online payment link is offered", /^https:\/\//.test(invoice.data.authorizationUrl || ""), invoice.data.authorizationUrl);
+check("bank transfer details are offered", invoice.data.paymentConfig?.bank?.accountNumber === "0123456789", JSON.stringify(invoice.data.paymentConfig));
+
+const stillUnpaid = await call("/api/subscriptions", { cookie });
+check("plan stays inactive until the money is verified", stillUnpaid.data.active === false, JSON.stringify(stillUnpaid.data.planId));
+
+const instantlyPaid = await call(`/api/subscriptions/payments/${invoice.data.payment.id}/verify`, { method: "POST", cookie });
+check("online payment verifies instantly", instantlyPaid.status === 200 && instantlyPaid.data.active === true, JSON.stringify(instantlyPaid.data).slice(0, 200));
+check("plan activated after payment", instantlyPaid.data.planId === "starter" && instantlyPaid.data.plan?.price === 100, JSON.stringify(instantlyPaid.data.plan));
+check(
+  "invoice is marked paid",
+  instantlyPaid.data.payments?.find((payment) => payment.id === invoice.data.payment.id)?.status === "paid",
+  JSON.stringify(instantlyPaid.data.payments?.[0])
+);
+
+console.log("chatbot configuration");
+const created = await call("/api/assistants", {
+  method: "POST",
+  cookie,
+  body: { name: "Front Desk", greeting: "Hi! How can we help?" },
+});
+check("assistant created", created.status === 201, JSON.stringify(created.data));
+const assistant = created.data.assistant;
+check("assistant has a public widget key", /^[a-f0-9]{16,64}$/.test(assistant.publicKey || ""), assistant.publicKey);
+
+const limit = await call("/api/assistants", { method: "POST", cookie, body: { name: "Second Assistant" } });
+check("starter plan blocks a second assistant", limit.status === 403 && limit.data.code === "PLAN_LIMIT", JSON.stringify(limit.data));
+
+const customised = await call(`/api/assistants/${assistant.id}`, {
+  method: "PATCH",
+  cookie,
+  body: { name: "Ada from SBD", widgetColor: "#12a150", welcomeMessage: "Hello! Ask me anything.", widgetPosition: "left" },
+});
+check(
+  "name, colour and welcome message saved",
+  customised.data.assistant?.widgetColor === "#12a150" &&
+    customised.data.assistant?.welcomeMessage === "Hello! Ask me anything." &&
+    customised.data.assistant?.name === "Ada from SBD",
+  JSON.stringify(customised.data.assistant)
+);
+
+const badColour = await call(`/api/assistants/${assistant.id}`, { method: "PATCH", cookie, body: { widgetColor: "blue" } });
+check("invalid colour rejected", badColour.status === 400, JSON.stringify(badColour.data));
+
+const script = await call("/widget.js");
+check("installation script is served", script.status === 200 && /sbdw-bubble/.test(script.text), String(script.status));
+check("installation script is JavaScript", /javascript/.test(script.headers.get("content-type") || ""), script.headers.get("content-type"));
+
+console.log("PDF training material");
+const priceList = await uploadPdf(
+  cookie,
+  assistant.id,
+  buildPdf([
+    "SBD AI Solutions - Price List 2026",
+    "Starter plan - 0 USD per month",
+    "Growth plan - 29 USD per month",
+    "Scale plan - 99 USD per month",
+  ]),
+  "price-list.pdf"
+);
+check("PDF upload saves", priceList.status === 201 && priceList.data.item?.kind === "document", JSON.stringify(priceList.data).slice(0, 200));
+check("PDF text extracted", /Starter plan - 0 USD per month/.test(priceList.data.item?.content || ""), String(priceList.data.item?.content || "").slice(0, 120));
+check("extraction reports its size", priceList.data.characters > 50, String(priceList.data.characters));
+
+const knowledge = await call(`/api/assistants/${assistant.id}/knowledge`, { cookie });
+check("PDF listed as training material", knowledge.data.items?.some((item) => item.kind === "document"), JSON.stringify(knowledge.data.items?.map((i) => i.kind)));
+
+const pdfChat = await call(`/api/assistants/${assistant.id}/chat`, {
+  method: "POST",
+  cookie,
+  body: { message: "What does the Growth plan cost?" },
+});
+check("assistant answers using the PDF", pdfChat.status === 200, JSON.stringify(pdfChat.data));
+check("PDF text reaches the AI prompt", lastAiRequest.includes("Starter plan - 0 USD per month"), lastAiRequest.slice(0, 160));
+check("training list counts saved PDFs", knowledge.data.documents === 1, String(knowledge.data.documents));
+check(
+  "API answers are never browser-cached",
+  /no-store/.test(knowledge.headers.get("cache-control") || ""),
+  knowledge.headers.get("cache-control")
+);
+
+const freshSession = await call("/api/auth/login", { method: "POST", body: { email: clientEmail, password: "Password123" } });
+const persisted = await call(`/api/assistants/${assistant.id}/knowledge`, { cookie: freshSession.cookie });
+check(
+  "PDF is still there after a refresh (fresh session)",
+  persisted.data.items?.some((item) => item.kind === "document" && /price/i.test(item.title)),
+  JSON.stringify(persisted.data.items?.map((i) => i.title))
+);
+
+const reopened = await call(`/api/assistants/${assistant.id}/knowledge/${priceList.data.item.id}`, { cookie });
+check("stored document text can be reopened", /Starter plan - 0 USD per month/.test(reopened.data.item?.content || ""));
+
+const documentAsk = await call(`/api/assistants/${assistant.id}/knowledge/${priceList.data.item.id}/ask`, {
+  method: "POST",
+  cookie,
+  body: { question: "How much does the Growth plan cost?" },
+});
+check("document question answered", documentAsk.status === 200 && !!documentAsk.data.answer, JSON.stringify(documentAsk.data));
+check(
+  "answer is built from that document alone",
+  lastAiRequest.includes("Document: price-list.pdf") && lastAiRequest.includes("Starter plan - 0 USD per month"),
+  lastAiRequest.slice(0, 200)
+);
+
+const noTextPdf = await uploadPdf(cookie, assistant.id, buildPdf([]), "scan.pdf");
+check("image-only PDF is rejected clearly", noTextPdf.status === 422 && /text|PDF/i.test(noTextPdf.data.error || ""), JSON.stringify(noTextPdf.data));
+
+const tooBig = await uploadPdf(cookie, assistant.id, Buffer.alloc(11 * 1024 * 1024, 32), "huge.pdf");
+check("oversized PDF rejected with the limit", tooBig.status === 413 && /10 MB/.test(tooBig.data.error || ""), JSON.stringify(tooBig.data));
+
+const notPdf = new FormData();
+notPdf.append("file", new Blob([Buffer.from("hello")], { type: "text/plain" }), "notes.txt");
+const wrongType = await call(`/api/assistants/${assistant.id}/knowledge/pdf`, { method: "POST", cookie, form: notPdf });
+check("non-PDF rejected", wrongType.status === 400, JSON.stringify(wrongType.data));
+
+const config = await call(`/api/widget/${assistant.publicKey}`);
+check("widget reads the published settings", config.data.assistant?.name === "Ada from SBD", JSON.stringify(config.data));
+check("widget welcome message reaches visitors", config.data.assistant?.welcomeMessage === "Hello! Ask me anything.");
+check("widget colour reaches visitors", config.data.assistant?.color === "#12a150");
+
+console.log("visitor chat and lead capture");
+const chat = await call(`/api/widget/${assistant.publicKey}/chat`, {
+  method: "POST",
+  body: { message: "Hi, my name is Musa and I need a new website. Email musa@example.com, phone 0803 123 4567" },
+});
+check("visitor gets a reply", chat.status === 200 && !!chat.data.reply, JSON.stringify(chat.data));
+check("lead captured from the conversation", chat.data.leadCaptured === true, JSON.stringify(chat.data));
+const visitorConversation = chat.data.conversationId;
+
+const second = await call(`/api/widget/${assistant.publicKey}/chat`, {
+  method: "POST",
+  body: { message: "What do you charge?", conversationId: visitorConversation },
+});
+check("conversation continues", second.data.conversationId === visitorConversation, JSON.stringify(second.data));
+
+const leads = await call("/api/leads", { cookie });
+check("lead appears in the dashboard", leads.data.leads?.length === 1, JSON.stringify(leads.data));
+check("lead has name, email, phone and service", leads.data.leads?.[0]?.name === "Musa" &&
+  leads.data.leads?.[0]?.email === "musa@example.com" &&
+  /0803/.test(leads.data.leads?.[0]?.phone || "") &&
+  /website/i.test(leads.data.leads?.[0]?.service || ""), JSON.stringify(leads.data.leads?.[0]));
+
+const formLead = await call(`/api/widget/${assistant.publicKey}/lead`, {
+  method: "POST",
+  body: { conversationId: visitorConversation, name: "Musa Bello", email: "musa.bello@example.com", service: "Brand design" },
+});
+check("details form saved", formLead.status === 201, JSON.stringify(formLead.data));
+const enriched = await call("/api/leads", { cookie });
+check("lead is enriched, not duplicated", enriched.data.leads?.length === 1 &&
+  enriched.data.leads[0].email === "musa.bello@example.com", JSON.stringify(enriched.data.leads));
+
+console.log("conversation management");
+const list = await call("/api/conversations?q=musa&status=open", { cookie });
+check("search finds the website conversation", list.data.conversations?.length === 1, JSON.stringify(list.data));
+check("conversation shows its channel", list.data.conversations?.[0]?.channel === "widget");
+
+const detail = await call(`/api/conversations/${visitorConversation}`, { cookie });
+check("full transcript returned", detail.data.messages?.length === 4, JSON.stringify(detail.data.messages?.length));
+check("transcript carries the lead", detail.data.lead?.email === "musa.bello@example.com");
+
+const takeover = await call(`/api/conversations/${visitorConversation}`, {
+  method: "PATCH",
+  cookie,
+  body: { takeover: true },
+});
+check("operator takes over", takeover.data.conversation?.takeover === true, JSON.stringify(takeover.data));
+
+const reply = await call(`/api/conversations/${visitorConversation}/messages`, {
+  method: "POST",
+  cookie,
+  body: { message: "Hi Musa, this is the team. We can start tomorrow." },
+});
+check("team reply saved", reply.status === 201 && reply.data.message?.author === "team", JSON.stringify(reply.data));
+
+const widgetPoll = await call(`/api/widget/${assistant.publicKey}/conversation/${visitorConversation}`);
+check("visitor sees the team reply", widgetPoll.data.messages?.some((m) => m.author === "team"), JSON.stringify(widgetPoll.data.messages?.slice(-1)));
+check("visitor sees takeover state", widgetPoll.data.takeover === true);
+
+const pausedAi = await call(`/api/widget/${assistant.publicKey}/chat`, {
+  method: "POST",
+  body: { message: "Can I book now?", conversationId: visitorConversation },
+});
+check("assistant stops answering after takeover", pausedAi.data.reply === "" && pausedAi.data.takeover === true, JSON.stringify(pausedAi.data));
+
+const resolved = await call(`/api/conversations/${visitorConversation}`, {
+  method: "PATCH",
+  cookie,
+  body: { status: "resolved" },
+});
+check("conversation marked resolved", resolved.data.conversation?.status === "resolved");
+const resolvedFilter = await call("/api/conversations?status=resolved", { cookie });
+check("resolved filter works", resolvedFilter.data.conversations?.length === 1);
+
+console.log("subscriptions");
+const subscription = await call("/api/subscriptions", { cookie });
+check("active plan listed", subscription.data.plan?.id === "starter" && subscription.data.active === true, JSON.stringify(subscription.data.plan));
+check("usage counted", subscription.data.usage?.messages >= 3 && subscription.data.usage?.assistants === 1, JSON.stringify(subscription.data.usage));
+
+const enterprisePlan = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "enterprise" } });
+check("enterprise cannot be self-served", enterprisePlan.status === 400 && enterprisePlan.data.code === "CUSTOM_PLAN", JSON.stringify(enterprisePlan.data));
+
+const customPlan = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "not-a-plan" } });
+check("unknown plan rejected", customPlan.status === 404, JSON.stringify(customPlan.data));
+
+const cancelled = await call("/api/subscriptions/cancel", { method: "POST", cookie });
+check("subscription cancels", cancelled.data.cancelAtPeriodEnd === true && cancelled.data.status === "canceled", JSON.stringify(cancelled.data));
+
+console.log("operator controls");
+const operatorLogin = await registerAndLogin(ADMIN_EMAIL, "Operator");
+const operator = operatorLogin.cookie;
+check("operator signs in", operatorLogin.data.user?.role === "admin", JSON.stringify(operatorLogin.data.user));
+
+const customers = await call("/api/admin/users", { cookie: operator });
+const customer = customers.data.users?.find((user) => user.email === clientEmail);
+check("customer listed for the operator", Boolean(customer), JSON.stringify(customers.data.users?.map((u) => u.email)));
+
+const suspended = await call(`/api/admin/users/${customer.id}`, {
+  method: "PATCH",
+  cookie: operator,
+  body: { suspended: true, suspendedReason: "Smoke test" },
+});
+check("account suspended", suspended.data.user?.suspended === true, JSON.stringify(suspended.data));
+
+const blockedSignIn = await call("/api/auth/login", { method: "POST", body: { email: clientEmail, password: "Password123" } });
+check("suspended account cannot sign in", blockedSignIn.status === 403 && blockedSignIn.data.code === "ACCOUNT_SUSPENDED", JSON.stringify(blockedSignIn.data));
+
+const blockedApi = await call("/api/assistants", { cookie });
+check("existing session is refused", blockedApi.status === 403 && blockedApi.data.code === "ACCOUNT_SUSPENDED", JSON.stringify(blockedApi.data));
+
+const reactivated = await call(`/api/admin/users/${customer.id}`, {
+  method: "PATCH",
+  cookie: operator,
+  body: { suspended: false },
+});
+check("account reactivated", reactivated.data.user?.suspended === false, JSON.stringify(reactivated.data));
+
+const afterLogin = await call("/api/auth/login", { method: "POST", body: { email: clientEmail, password: "Password123" } });
+check("reactivated account signs in again", afterLogin.status === 200, JSON.stringify(afterLogin.data));
+const afterApi = await call("/api/assistants", { cookie: afterLogin.cookie });
+check("reactivated account can use the API", afterApi.status === 200, JSON.stringify(afterApi.data).slice(0, 120));
+
+console.log("bank transfer verified by the operator");
+const transfer = await call("/api/subscriptions", {
+  method: "POST",
+  cookie: afterLogin.cookie,
+  body: { planId: "professional" },
+});
+check("upgrade invoice created", transfer.status === 201 && transfer.data.payment?.amount === 200, JSON.stringify(transfer.data).slice(0, 200));
+check("plan is not upgraded before payment", transfer.data.planId === "starter", String(transfer.data.planId));
+
+const submitted = await call(`/api/subscriptions/payments/${transfer.data.payment.id}/submit`, {
+  method: "POST",
+  cookie: afterLogin.cookie,
+  body: { note: "TRX-778812" },
+});
+check("transfer reference recorded", submitted.status === 200 && /reference received/i.test(submitted.data.message || ""), JSON.stringify(submitted.data).slice(0, 160));
+
+const operatorPayments = await call("/api/admin/payments?status=pending", { cookie: operator });
+const pendingRow = operatorPayments.data.payments?.find((payment) => payment.id === transfer.data.payment.id);
+check("operator sees the pending payment", Boolean(pendingRow) && pendingRow.note === "TRX-778812", JSON.stringify(operatorPayments.data.payments?.slice(0, 2)));
+
+const verifiedByOperator = await call(`/api/admin/payments/${transfer.data.payment.id}/verify`, {
+  method: "POST",
+  cookie: operator,
+});
+check("operator verifies the payment", verifiedByOperator.status === 200, JSON.stringify(verifiedByOperator.data));
+
+const upgraded = await call("/api/subscriptions", { cookie: afterLogin.cookie });
+check("verified payment activates the plan", upgraded.data.planId === "professional" && upgraded.data.active === true, JSON.stringify({ plan: upgraded.data.planId, active: upgraded.data.active }));
+check(
+  "payment history shows it as paid",
+  upgraded.data.payments?.find((payment) => payment.id === transfer.data.payment.id)?.status === "paid",
+  JSON.stringify(upgraded.data.payments?.find((payment) => payment.id === transfer.data.payment.id))
+);
+
+const secondAssistant = await call("/api/assistants", { method: "POST", cookie: afterLogin.cookie, body: { name: "Support Bot" } });
+check("paid plan allows another assistant", secondAssistant.status === 201, JSON.stringify(secondAssistant.data));
+
+const rejectedInvoice = await call("/api/subscriptions", { method: "POST", cookie: afterLogin.cookie, body: { planId: "business" } });
+const rejected = await call(`/api/admin/payments/${rejectedInvoice.data.payment.id}/reject`, {
+  method: "POST",
+  cookie: operator,
+  body: { reason: "Transfer not received" },
+});
+check("operator can reject a payment", rejected.status === 200, JSON.stringify(rejected.data));
+const afterReject = await call("/api/subscriptions", { cookie: afterLogin.cookie });
+check(
+  "a rejected payment does not activate the plan",
+  afterReject.data.planId === "professional" &&
+    afterReject.data.payments?.find((payment) => payment.id === rejectedInvoice.data.payment.id)?.status === "rejected",
+  JSON.stringify({ plan: afterReject.data.planId, payments: afterReject.data.payments?.slice(0, 2) })
+);
+
+const selfSuspend = await call(`/api/admin/users/${operatorLogin.data.user.id}`, {
+  method: "PATCH",
+  cookie: operator,
+  body: { suspended: true },
+});
+check("operator cannot suspend themselves", selfSuspend.status === 400, JSON.stringify(selfSuspend.data));
+
+const platform = await call("/api/admin/platform", { cookie: operator });
+check("platform activity reported", platform.data.activity?.messagesThisWeek >= 4, JSON.stringify(platform.data.activity));
+check("daily activity has 7 days", platform.data.daily?.length === 7);
+
+const businesses = await call("/api/admin/businesses", { cookie: operator });
+check("businesses listed", businesses.data.businesses?.some((b) => b.email === clientEmail), JSON.stringify(businesses.data.businesses?.map((b) => b.email)));
+
+const allAssistants = await call("/api/admin/assistants", { cookie: operator });
+check("all assistants listed", allAssistants.data.assistants?.length === 2, JSON.stringify(allAssistants.data.assistants?.length));
+
+ai.close();
+paystack.close();
+console.log(failures === 0 ? "\nALL FEATURE CHECKS PASSED" : `\n${failures} FEATURE CHECKS FAILED`);
+process.exit(failures === 0 ? 0 : 1);

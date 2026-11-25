@@ -139,7 +139,19 @@ app.use((error, req, res, next) => {
   }
 
   if (error?.code === "LIMIT_FILE_SIZE") {
-    return res.status(413).json({ error: "That file is larger than the 10 MB limit." });
+    return res.status(413).json({
+      error: "That file is larger than the 10 MB limit. Compress the PDF or split it into smaller documents.",
+      code: "FILE_TOO_LARGE",
+    });
+  }
+
+  /* Multer rejects a wrong field name or an unexpected file before the route
+     body runs; answer with something the upload form can display. */
+  if (String(error?.code || "").startsWith("LIMIT_") || error?.name === "MulterError") {
+    return res.status(400).json({
+      error: "That upload could not be read. Choose a PDF file and try again.",
+      code: "UPLOAD_REJECTED",
+    });
   }
 
   console.error("[api]", error);

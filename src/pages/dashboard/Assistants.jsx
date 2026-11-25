@@ -123,7 +123,13 @@ export default function Assistants({ onOpen }) {
       {assistants.length ? (
         <div className="assistant-grid">
           {assistants.map((assistant) => (
-            <article className="assistant-card" key={assistant.id}>
+            <button
+              type="button"
+              className="assistant-card assistant-card--button"
+              key={assistant.id}
+              onClick={() => onOpen(assistant.id)}
+              aria-label={`Open and edit ${assistant.name}`}
+            >
               <div className="assistant-card-head">
                 <span className="assistant-avatar" aria-hidden="true">{assistant.name.charAt(0).toUpperCase()}</span>
                 <div>
@@ -140,10 +146,10 @@ export default function Assistants({ onOpen }) {
                 <div><dt>Training</dt><dd>{assistant.knowledgeCount} items</dd></div>
                 <div><dt>Chats</dt><dd>{assistant.conversationCount}</dd></div>
               </dl>
-              <button className="btn btn--ghost btn--sm btn--block" type="button" onClick={() => onOpen(assistant.id)}>
-                Open workspace
-              </button>
-            </article>
+              <span className="btn btn--ghost btn--sm btn--block" aria-hidden="true">
+                Open &amp; edit
+              </span>
+            </button>
           ))}
         </div>
       ) : (

@@ -34,9 +34,11 @@ function knowledgeBlock(items) {
   const parts = items.map((item) => {
     const label = item.kind === "faq" ? "FAQ" : item.kind === "pricing" ? "Pricing" : item.kind === "document" ? "Document" : "Business information";
     const title = item.title ? `${item.title}: ` : "";
-    return `- [${label}] ${title}${item.content}`;
+    /* Long training documents are shortened per item so one PDF cannot crowd
+       every other source out of the assistant's context. */
+    return `- [${label}] ${title}${String(item.content || "").slice(0, 6000)}`;
   });
-  return parts.join("\n").slice(0, 12000);
+  return parts.join("\n").slice(0, 24000);
 }
 
 const LEAD_GUIDANCE = [

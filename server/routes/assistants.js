@@ -261,19 +261,37 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
         text = result.text || "";
       }
     } catch (error) {
-      console.error("[pdf] extraction failed", error.message);
-      return res.status(422).json({ error: "That PDF could not be read. Try a text-based PDF or add the information manually." });
+      console.error("[pdf] extraction failed:", error.message);
+      const locked = /password|encrypt/i.test(error.message || "");
+      return res.status(422).json({
+        error: locked
+          ? "This PDF is password-protected, so its text cannot be read. Remove the password and upload it again."
+          : "That PDF could not be read. It may be damaged or in an unusual format — try exporting it again as a PDF, or add the information manually.",
+        code: locked ? "PDF_LOCKED" : "PDF_UNREADABLE",
+      });
     }
 
+    /* pdf-parse marks pages with "-- 1 of 1 --"; those markers are noise, but a
+       short price list is still valid training material, so the bar for text is
+       low and measured in visible characters, not lines. */
     const cleaned = text
       .split("\n")
-      .filter((line) => !/^-- \d+ of \d+ --$/.test(line.trim()))
+      .filter((line) => !/^--?\s*\d+\s*(?:of|\/)\s*\d+\s*--?$/.test(line.trim()))
       .join("\n")
-      .replace(/\s+\n/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    if (cleaned.length < 20) {
-      return res.status(422).json({ error: "No readable text was found in that PDF. Scanned documents need to be added manually." });
+    const visibleCharacters = cleaned.replace(/\s/g, "").length;
+    console.log(
+      `[pdf] ${req.file.originalname || "document.pdf"} (${Math.round(req.file.size / 1024)} KB) → ${visibleCharacters} characters`
+    );
+
+    if (visibleCharacters < 8) {
+      return res.status(422).json({
+        error:
+          "This PDF has no text layer — it is a scan or an image, so there is nothing to learn from. Export it as a text PDF, or type the information under Business information instead.",
+        code: "PDF_NO_TEXT",
+      });
     }
 
     const row = await one(
@@ -283,12 +301,16 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
         req.user.id,
         assistant.id,
         (req.body.title || req.file.originalname || "Document").slice(0, 160),
-        cleaned.slice(0, 40000),
+        cleaned.slice(0, 60000),
         req.file.originalname || "document.pdf",
       ]
     );
 
-    res.status(201).json({ item: knowledgeApi(row), message: "PDF processed and added to the assistant's knowledge." });
+    res.status(201).json({
+      item: knowledgeApi(row),
+      characters: visibleCharacters,
+      message: `${req.file.originalname || "PDF"} added — ${visibleCharacters.toLocaleString("en-GB")} characters of text learned.`,
+    });
   } catch (error) {
     next(error);
   }

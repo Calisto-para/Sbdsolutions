@@ -1904,3 +1904,28 @@
     grid-template-columns: 1fr;
   }
 }
+
+.assistant-card--button {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.assistant-card--button:hover,
+.assistant-card--button:focus-visible {
+  border-color: #0b5cff;
+  box-shadow: 0 12px 28px rgba(11, 92, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.assistant-card--button:focus-visible {
+  outline: 2px solid #0b5cff;
+  outline-offset: 2px;
+}
+
+.assistant-card--button .btn--block {
+  pointer-events: none;
+}

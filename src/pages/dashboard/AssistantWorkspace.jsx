@@ -121,6 +121,10 @@ function Training({ assistantId, items, reload, setError }) {
     setBusy(true);
     setError("");
     setNotice("");
+    if (file.size > 10 * 1024 * 1024) {
+      setError("That file is larger than the 10 MB limit. Compress the PDF or split it into smaller documents.");
+      return;
+    }
     const formData = new FormData();
     formData.append("file", file);
     try {
@@ -192,16 +196,28 @@ function Training({ assistantId, items, reload, setError }) {
         <form className="upload-box" onSubmit={uploadPdf}>
           <div>
             <strong>Upload a PDF</strong>
-            <p>Price lists, service guides and company documents. Up to 10 MB.</p>
+            <p>
+              Price lists, service guides and company documents, up to 10 MB. The PDF must contain real text —
+              scanned pages or photos of paper have nothing to read.
+            </p>
           </div>
-          <input ref={fileRef} type="file" accept="application/pdf" aria-label="Choose a PDF document" />
-          <button className="btn btn--ghost btn--sm" type="submit" disabled={busy}>Upload PDF</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            aria-label="Choose a PDF document"
+            disabled={busy}
+          />
+          <button className="btn btn--ghost btn--sm" type="submit" disabled={busy}>
+            {busy ? "Reading PDF…" : "Upload PDF"}
+          </button>
         </form>
       </section>
 
       <section className="panel">
         <div className="panel-head">
           <h3>Training material ({items.length})</h3>
+          <p>Your assistant uses all of this — including uploaded PDFs — when it answers.</p>
         </div>
         {items.length ? (
           <ul className="training-list">

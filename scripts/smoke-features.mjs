@@ -8,6 +8,40 @@ const BASE = process.argv[2] || "http://127.0.0.1:3021";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "ops-features@example.com";
 const stamp = Date.now();
 let failures = 0;
+let lastAiRequest = "";
+
+/* A small, valid one-page PDF with a real text layer, so the upload path is
+   exercised without keeping a binary fixture in the repository. */
+function buildPdf(lines) {
+  const body = lines
+    .map((line, index) => `${index === 0 ? "72 760 Td" : "0 -18 Td"} (${String(line).replace(/([()\\])/g, "\\$1")}) Tj`)
+    .join("\n");
+  const content = `BT /F1 12 Tf\n${body}\nET\n`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}endstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+async function uploadPdf(cookie, assistantId, buffer, filename) {
+  const fd = new FormData();
+  fd.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
+  return call(`/api/assistants/${assistantId}/knowledge/pdf`, { method: "POST", cookie, form: fd });
+}
 
 const check = (label, condition, detail = "") => {
   if (condition) console.log(`  ok   ${label}`);
@@ -21,6 +55,7 @@ const ai = http.createServer((req, res) => {
   let body = "";
   req.on("data", (chunk) => (body += chunk));
   req.on("end", () => {
+    lastAiRequest = body;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
@@ -41,11 +76,11 @@ const ai = http.createServer((req, res) => {
 });
 await new Promise((resolve) => ai.listen(4035, "127.0.0.1", resolve));
 
-async function call(path, { method = "GET", body, cookie = "" } = {}) {
+async function call(path, { method = "GET", body, cookie = "", form } = {}) {
   const response = await fetch(`${BASE}${path}`, {
     method,
     headers: { ...(body ? { "content-type": "application/json" } : {}), cookie },
-    body: body ? JSON.stringify(body) : undefined,
+    body: form || (body ? JSON.stringify(body) : undefined),
   });
   const setCookie = response.headers.getSetCookie?.() || [];
   const nextCookie = setCookie.length ? setCookie.map((v) => v.split(";")[0]).join("; ") : cookie;
@@ -116,6 +151,44 @@ check("invalid colour rejected", badColour.status === 400, JSON.stringify(badCol
 const script = await call("/widget.js");
 check("installation script is served", script.status === 200 && /sbdw-bubble/.test(script.text), String(script.status));
 check("installation script is JavaScript", /javascript/.test(script.headers.get("content-type") || ""), script.headers.get("content-type"));
+
+console.log("PDF training material");
+const priceList = await uploadPdf(
+  cookie,
+  assistant.id,
+  buildPdf([
+    "SBD AI Solutions - Price List 2026",
+    "Starter plan - 0 USD per month",
+    "Growth plan - 29 USD per month",
+    "Scale plan - 99 USD per month",
+  ]),
+  "price-list.pdf"
+);
+check("PDF upload saves", priceList.status === 201 && priceList.data.item?.kind === "document", JSON.stringify(priceList.data).slice(0, 200));
+check("PDF text extracted", /Starter plan - 0 USD per month/.test(priceList.data.item?.content || ""), String(priceList.data.item?.content || "").slice(0, 120));
+check("extraction reports its size", priceList.data.characters > 50, String(priceList.data.characters));
+
+const knowledge = await call(`/api/assistants/${assistant.id}/knowledge`, { cookie });
+check("PDF listed as training material", knowledge.data.items?.some((item) => item.kind === "document"), JSON.stringify(knowledge.data.items?.map((i) => i.kind)));
+
+const pdfChat = await call(`/api/assistants/${assistant.id}/chat`, {
+  method: "POST",
+  cookie,
+  body: { message: "What does the Growth plan cost?" },
+});
+check("assistant answers using the PDF", pdfChat.status === 200, JSON.stringify(pdfChat.data));
+check("PDF text reaches the AI prompt", lastAiRequest.includes("Starter plan - 0 USD per month"), lastAiRequest.slice(0, 160));
+
+const noTextPdf = await uploadPdf(cookie, assistant.id, buildPdf([]), "scan.pdf");
+check("image-only PDF is rejected clearly", noTextPdf.status === 422 && /text|PDF/i.test(noTextPdf.data.error || ""), JSON.stringify(noTextPdf.data));
+
+const tooBig = await uploadPdf(cookie, assistant.id, Buffer.alloc(11 * 1024 * 1024, 32), "huge.pdf");
+check("oversized PDF rejected with the limit", tooBig.status === 413 && /10 MB/.test(tooBig.data.error || ""), JSON.stringify(tooBig.data));
+
+const notPdf = new FormData();
+notPdf.append("file", new Blob([Buffer.from("hello")], { type: "text/plain" }), "notes.txt");
+const wrongType = await call(`/api/assistants/${assistant.id}/knowledge/pdf`, { method: "POST", cookie, form: notPdf });
+check("non-PDF rejected", wrongType.status === 400, JSON.stringify(wrongType.data));
 
 const config = await call(`/api/widget/${assistant.publicKey}`);
 check("widget reads the published settings", config.data.assistant?.name === "Ada from SBD", JSON.stringify(config.data));

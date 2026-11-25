@@ -13,7 +13,7 @@ export function dbKind() {
   return kind;
 }
 
-async function getImplementation() {
+export async function getImplementation() {
   if (implementation) return implementation;
 
   if (env.databaseUrl) {

@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { query } from "./db.js";
+import { getImplementation } from "./db.js";
 import { env } from "./env.js";
 import { ensureEnvAdmin } from "./admin-account.js";
+
+async function query(text, params = []) {
+  const db = await getImplementation();
+  return db.query(text, params);
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 

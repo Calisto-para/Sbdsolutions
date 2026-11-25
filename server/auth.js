@@ -60,6 +60,8 @@ export const publicUser = (row) => ({
   country: row.country,
   emailVerified: Boolean(row.email_verified_at),
   role: row.role === "admin" ? "admin" : "client",
+  suspended: Boolean(row.suspended_at),
+  suspendedReason: row.suspended_reason || "",
   preferences: row.preferences || {},
   createdAt: row.created_at,
 });
@@ -72,6 +74,14 @@ export async function requireAuth(req, res, next) {
   if (!user) {
     clearSessionCookie(res);
     return res.status(401).json({ error: "Please sign in to continue." });
+  }
+
+  if (user.suspended_at) {
+    clearSessionCookie(res);
+    return res.status(403).json({
+      error: "This account is suspended. Message us on WhatsApp (+234 906 392 4288) so we can help.",
+      code: "ACCOUNT_SUSPENDED",
+    });
   }
 
   req.user = user;

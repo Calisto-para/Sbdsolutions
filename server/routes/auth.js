@@ -184,6 +184,14 @@ router.post("/login", async (req, res, next) => {
     if (!user || !(await checkPassword(body.password, user.password_hash))) {
       return res.status(401).json({ error: "Email or password is incorrect." });
     }
+
+    if (user.suspended_at) {
+      return res.status(403).json({
+        error:
+          "This account is suspended. Message us on WhatsApp (+234 906 392 4288) so we can help.",
+        code: "ACCOUNT_SUSPENDED",
+      });
+    }
     /* Allowlisted operator addresses skip the inbox round-trip, so a broken
        mailbox setup cannot lock the owner out of the platform. */
     user = await promoteIfAllowlisted(user);

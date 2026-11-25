@@ -4,6 +4,7 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete } from "../ai.js";
+import { assistantAllowanceError } from "../plans.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -21,6 +22,10 @@ const toApi = (row) => ({
   greeting: row.greeting,
   instructions: row.instructions,
   isActive: row.is_active,
+  publicKey: row.public_key,
+  widgetColor: row.widget_color,
+  widgetPosition: row.widget_position,
+  welcomeMessage: row.welcome_message,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -45,6 +50,14 @@ const assistantShape = {
   greeting: z.string().trim().max(600).optional().default(""),
   instructions: z.string().trim().max(4000).optional().default(""),
   isActive: z.boolean().optional().default(true),
+  widgetColor: z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-f]{6}$/i, "Choose a colour such as #0b5cff.")
+    .optional()
+    .default("#0b5cff"),
+  widgetPosition: z.enum(["right", "left"]).optional().default("right"),
+  welcomeMessage: z.string().trim().max(600).optional().default(""),
 };
 
 async function ownedAssistant(userId, assistantId) {
@@ -77,11 +90,15 @@ router.get("/", requireAuth, async (req, res, next) => {
 
 router.post("/", requireAuth, async (req, res, next) => {
   try {
+    const allowance = await assistantAllowanceError(req.user.id);
+    if (allowance) return res.status(403).json({ error: allowance, code: "PLAN_LIMIT" });
+
     const body = z.object(assistantShape).parse(req.body);
     const row = await one(
       `insert into assistants
-        (user_id, name, business_description, services, products, tone, language, greeting, instructions, is_active)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        (user_id, name, business_description, services, products, tone, language, greeting,
+         instructions, is_active, widget_color, widget_position, welcome_message)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        returning *`,
       [
         req.user.id,
@@ -94,6 +111,9 @@ router.post("/", requireAuth, async (req, res, next) => {
         body.greeting || `Hi! I'm ${body.name}. How can I help you today?`,
         body.instructions,
         body.isActive,
+        body.widgetColor,
+        body.widgetPosition,
+        body.welcomeMessage,
       ]
     );
     res.status(201).json({ assistant: toApi(row), message: "Assistant created." });
@@ -121,7 +141,8 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
     const row = await one(
       `update assistants
           set name = $3, business_description = $4, services = $5, products = $6,
-              tone = $7, language = $8, greeting = $9, instructions = $10, is_active = $11, updated_at = now()
+              tone = $7, language = $8, greeting = $9, instructions = $10, is_active = $11,
+              widget_color = $12, widget_position = $13, welcome_message = $14, updated_at = now()
         where id = $1 and user_id = $2
         returning *`,
       [
@@ -136,9 +157,30 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         body.greeting,
         body.instructions,
         body.isActive,
+        body.widgetColor,
+        body.widgetPosition,
+        body.welcomeMessage,
       ]
     );
     res.json({ assistant: toApi(row), message: "Assistant updated." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* A new key invalidates the old snippet, for a business that moved the chat to
+   a new site or wants to switch the old install off. */
+router.post("/:id/widget-key", requireAuth, async (req, res, next) => {
+  try {
+    const row = await one(
+      `update assistants
+          set public_key = replace(gen_random_uuid()::text, '-', ''), updated_at = now()
+        where id = $1 and user_id = $2
+        returning *`,
+      [req.params.id, req.user.id]
+    );
+    if (!row) return res.status(404).json({ error: "Assistant not found." });
+    res.json({ assistant: toApi(row), message: "A new installation code was generated. The old code no longer works." });
   } catch (error) {
     next(error);
   }

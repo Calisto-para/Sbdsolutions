@@ -16,6 +16,9 @@ import assistantRoutes from "./routes/assistants.js";
 import conversationRoutes from "./routes/conversations.js";
 import overviewRoutes from "./routes/overview.js";
 import adminRoutes from "./routes/admin.js";
+import widgetRoutes from "./routes/widget.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
+import leadRoutes from "./routes/leads.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -78,9 +81,21 @@ app.use("/api/assistants", assistantRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/overview", overviewRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/widget", widgetRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/leads", leadRoutes);
 
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "Endpoint not found." });
+});
+
+/* The embeddable chat widget any customer can paste into their own website. */
+const WIDGET_SCRIPT = path.resolve("server/widget-embed.js");
+app.get("/widget.js", (req, res) => {
+  res.type("application/javascript");
+  res.set("Cache-Control", env.isProd ? "public, max-age=300" : "no-store");
+  res.set("Access-Control-Allow-Origin", "*");
+  res.sendFile(WIDGET_SCRIPT);
 });
 
 /* Static site: the built app in dist/, with clean URLs mapped to the real

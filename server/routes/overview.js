@@ -13,7 +13,9 @@ router.get("/", requireAuth, async (req, res, next) => {
          (select count(*)::int from conversations where user_id = $1) as conversations,
          (select count(*)::int from messages m
             join conversations c on c.id = m.conversation_id
-           where c.user_id = $1) as messages`,
+           where c.user_id = $1) as messages,
+         (select count(*)::int from leads where user_id = $1) as leads,
+         (select count(*)::int from conversations where user_id = $1 and status = 'open') as open_conversations`,
       [req.user.id]
     );
 
@@ -44,6 +46,8 @@ router.get("/", requireAuth, async (req, res, next) => {
         knowledgeItems: stats.knowledge_items,
         conversations: stats.conversations,
         messages: stats.messages,
+        leads: stats.leads,
+        openConversations: stats.open_conversations,
       },
       recentConversations: recentConversations.map((row) => ({
         id: row.id,

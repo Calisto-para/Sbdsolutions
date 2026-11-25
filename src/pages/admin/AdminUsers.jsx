@@ -33,6 +33,28 @@ export default function AdminUsers() {
       .catch((err) => setDetailError(err.message));
   }, [selected]);
 
+  const setSuspended = async (suspended) => {
+    const verb = suspended ? "Suspend" : "Reactivate";
+    if (!window.confirm(`${verb} ${detail.user.fullName}'s account?`)) return;
+    setSaving(true);
+    setDetailError("");
+    try {
+      const result = await api(`/admin/users/${detail.user.id}`, {
+        method: "PATCH",
+        body: { suspended, suspendedReason: suspended ? "Suspended by operator" : "" },
+      });
+      setDetail({
+        ...detail,
+        user: { ...detail.user, suspended: Boolean(result.user.suspended) },
+      });
+      load(query);
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const setRole = async (role) => {
     setSaving(true);
     setDetailError("");
@@ -102,6 +124,7 @@ export default function AdminUsers() {
                         {user.role === "admin" ? "Operator" : "Client"}
                       </span>
                       {user.emailVerified ? null : <span className="admin-pill admin-pill--muted">Unverified</span>}
+                      {user.suspended ? <span className="admin-pill admin-pill--muted">Suspended</span> : null}
                     </td>
                     <td>{user.assistants}</td>
                     <td>{shortDate(user.createdAt)}</td>
@@ -165,6 +188,19 @@ export default function AdminUsers() {
 
               <div className="admin-detail-actions">
                 <span className="admin-pill">{detail.user.role === "admin" ? "Operator" : "Client"}</span>
+                {detail.user.suspended ? (
+                  <span className="admin-pill admin-pill--muted">Suspended</span>
+                ) : null}
+                {detail.user.id === me?.id ? null : (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm btn--danger"
+                    disabled={saving}
+                    onClick={() => setSuspended(!detail.user.suspended)}
+                  >
+                    {detail.user.suspended ? "Reactivate account" : "Suspend account"}
+                  </button>
+                )}
                 {detail.user.id === me?.id ? (
                   <span className="admin-stat-note">This is your own account.</span>
                 ) : detail.user.role === "admin" ? (
@@ -187,6 +223,12 @@ export default function AdminUsers() {
                   </button>
                 )}
               </div>
+
+              {detail.user.suspended ? (
+                <p className="form-alert form-alert--error">
+                  This account is suspended: sign-in is blocked and the API refuses its session.
+                </p>
+              ) : null}
 
               <h3 className="admin-subhead">Assistants</h3>
               {detail.assistants.length ? (

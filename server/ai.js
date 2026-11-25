@@ -39,8 +39,16 @@ function knowledgeBlock(items) {
   return parts.join("\n").slice(0, 12000);
 }
 
-export function buildSystemPrompt({ assistant, business, knowledge }) {
+const LEAD_GUIDANCE = [
+  "You are speaking to a visitor on the business website.",
+  "Early in the conversation ask for their name, their email address, their phone number and what service or product they need.",
+  "Ask for those details one or two at a time, conversationally, never as a form or a list of questions.",
+  "Once you have them, confirm the details back and say the team will follow up.",
+];
+
+export function buildSystemPrompt({ assistant, business, knowledge, channel = "dashboard" }) {
   return [
+    ...(channel === "widget" ? LEAD_GUIDANCE : []),
     `You are ${assistant.name}, the AI assistant for ${business?.name || "this business"}.`,
     assistant.business_description ? `About the business: ${assistant.business_description}` : "",
     assistant.services ? `Services offered: ${assistant.services}` : "",

@@ -110,6 +110,38 @@ also promote or demote another account from the Customers tab. The area shows ac
 newest signups, a searchable customer list with each customer's assistants and
 conversations, and every conversation started on the platform.
 
+### Customer platform features
+
+- **Website chatbot** — every assistant has a public key and a one-line install
+  snippet (`/widget.js`, served by the Node app). Customers set the chatbot
+  name, brand colour, bubble position and welcome message in the dashboard's
+  **Website Chatbot** tab, preview it, copy the code and paste it into their
+  site. The embed renders its own scoped markup and styles, so it cannot clash
+  with the host page, and it refuses to render for a paused assistant.
+- **Lead collection** — the assistant asks website visitors for their name,
+  email, phone and what they need. Details typed in ordinary sentences are
+  extracted server-side, and the widget also offers a "leave my details" form.
+  One lead is kept per conversation and enriched as more details arrive; the
+  **Leads** tab lists them all with search.
+- **Conversations** — website and dashboard chats in one place, searchable by
+  message, visitor or email, filterable by status and assistant. Customers can
+  read the full transcript, mark a chat resolved or reopen it, take it over from
+  the assistant, and reply as the team. The widget polls the public conversation
+  endpoint, so a visitor sees the team's replies and the assistant stops
+  answering once a person takes over.
+- **Subscriptions** — Starter (free, 200 messages/month, 1 assistant), Growth
+  and Scale, seeded in `plans`. Customers see their plan, usage against the
+  monthly message and assistant allowances, upgrade/downgrade or cancel, and a
+  payment history. Plan changes take effect immediately and are recorded as
+  invoices settled with the SBD team; the platform does not charge a card.
+  Allowances are enforced when adding an assistant and when a visitor sends a
+  message.
+- **Operator monitoring** — the unlisted `/admin` area adds a **Businesses &
+  usage** tab with every business and assistant, weekly activity per day, the
+  busiest customers, and suspend/reactivate controls on any non-operator
+  account. Suspend blocks sign-in and refuses an existing session immediately;
+  reactivating restores both.
+
 ### Email delivery
 
 `server/mail.js` sends verification and password-reset email through HTTP APIs,

@@ -289,6 +289,9 @@ async function connectDatabase(attempt = 1) {
     dbState.ready = false;
     dbState.error = error.message;
     console.error(`[db] connect/migrate attempt ${attempt} failed: ${error.message}`);
+    console.error(`[db] error type: ${error.constructor.name}`);
+    console.error(`[db] error stack: ${error.stack || 'NO STACK'}`);
+    console.error(`[db] error name: ${error.name || 'NO NAME'}`);
     if (attempt < 24) {
       setTimeout(() => connectDatabase(attempt + 1), 5000);
     } else {

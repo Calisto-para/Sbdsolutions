@@ -148,7 +148,7 @@ on conflict (id) do update
       message_limit = excluded.message_limit,
       features = excluded.features,
       sort_order = excluded.sort_order,
-      custom = excluded.custom,
+      custom = false,
       billing_note = excluded.billing_note;
 
 create table if not exists subscriptions (
@@ -176,15 +176,13 @@ create table if not exists payments (
   status text not null default 'pending',
   method text not null default 'offline',
   description text not null default '',
+  reference text,
+  note text not null default '',
+  verified_at timestamptz,
+  verified_by uuid references users(id) on delete set null,
+  rejected_reason text not null default '',
   created_at timestamptz not null default now()
 );
-/* Payment records double as invoices: a plan is only activated once the
-   matching payment is verified, by the provider or by an operator. */
-alter table payments add column if not exists reference text;
-alter table payments add column if not exists note text not null default '';
-alter table payments add column if not exists verified_at timestamptz;
-alter table payments add column if not exists verified_by uuid references users(id) on delete set null;
-alter table payments add column if not exists rejected_reason text not null default '';
 create unique index if not exists payments_reference_idx on payments (reference) where reference is not null;
 create index if not exists payments_user_idx on payments (user_id, created_at desc);
 create index if not exists payments_status_idx on payments (status, created_at desc);

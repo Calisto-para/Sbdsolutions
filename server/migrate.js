@@ -7,7 +7,8 @@ import { ensureEnvAdmin } from "./admin-account.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/* Every statement is idempotent, so this is safe to run at every boot. */
+/* Every statement is idempotent, so this is safe to run at every boot.
+   Deploy: 2026-11-25T08:20:00Z — forces fresh build on Render. */
 export async function migrate() {
   const sql = fs.readFileSync(path.join(here, "schema.sql"), "utf8");
   const statements = sql
@@ -33,5 +34,5 @@ export async function migrate() {
   /* Creates the operator account from ADMIN_EMAIL/ADMIN_PASSWORD if it is not there yet. */
   await ensureEnvAdmin();
 
-  console.log(`[db] schema ready (${statements.length} statements)`);
+  console.log(`[db] schema ready (${statements.length} statements) — deploy ${process.env.npm_package_version || 'dev'}`);
 }

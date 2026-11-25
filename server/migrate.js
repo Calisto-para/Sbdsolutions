@@ -1,4 +1,4 @@
-console.log('[migrate] DEPLOY_CHECK: running commit 083bd98 — query defined locally');
+console.log('[migrate] DEPLOY_CHECK: running commit 63440b4 — query defined locally');
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

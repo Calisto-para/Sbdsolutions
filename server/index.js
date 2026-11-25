@@ -255,10 +255,10 @@ async function connectDatabase(attempt = 1) {
     dbState.ready = false;
     dbState.error = error.message;
     console.error(`[db] connect/migrate attempt ${attempt} failed: ${error.message}`);
-    if (attempt < 12) {
+    if (attempt < 24) {
       setTimeout(() => connectDatabase(attempt + 1), 5000);
     } else {
-      console.error("[db] giving up after 12 attempts — check DATABASE_URL and that the Neon database accepts connections.");
+      console.error("[db] giving up after 24 attempts (120s) — check DATABASE_URL and that the Neon database accepts connections.");
     }
   }
 }

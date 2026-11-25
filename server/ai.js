@@ -86,7 +86,7 @@ export async function complete({ system, messages }) {
   const response = await openai.chat.completions.create({
     model: env.openai.model,
     temperature: 0.4,
-    max_tokens: 400,
+    max_completion_tokens: 400,
     messages: [{ role: "system", content: system }, ...messages],
   });
   const text = response.choices?.[0]?.message?.content?.trim();

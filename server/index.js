@@ -8,8 +8,7 @@ import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
 import { emailProviderName, emailProviders } from "./mail.js";
 import { senderWarning, emailHealthSnapshot } from "./mail-check.js";
-import { migrate } from "./migrate.js";
-import { dbKind, dbState } from "./db.js";
+import { dbKind, dbState, getImplementation } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import businessRoutes from "./routes/business.js";
 import assistantRoutes from "./routes/assistants.js";
@@ -211,9 +210,45 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
+async function query(text, params = []) {
+  const db = await getImplementation();
+  return db.query(text, params);
+}
+
+async function runMigration() {
+  const here = path.dirname(new URL(import.meta.url).pathname);
+  const sqlPath = path.resolve(here, "schema.sql");
+  const sql = fs.readFileSync(sqlPath, "utf8");
+  const statements = sql
+    .split(/;\s*\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await query(statement);
+  }
+
+  const { env: _env } = await import("./env.js");
+  for (const address of _env.adminEmails) {
+    await query(
+      `update users
+          set role = 'admin',
+              email_verified_at = coalesce(email_verified_at, now()),
+              updated_at = now()
+        where lower(email) = $1 and (role <> 'admin' or email_verified_at is null)`,
+      [address]
+    );
+  }
+
+  const { ensureEnvAdmin } = await import("./admin-account.js");
+  await ensureEnvAdmin();
+
+  console.log(`[db] schema ready (${statements.length} statements)`);
+}
+
 async function connectDatabase(attempt = 1) {
   try {
-    await migrate();
+    await runMigration();
     dbState.ready = true;
     dbState.error = null;
   } catch (error) {

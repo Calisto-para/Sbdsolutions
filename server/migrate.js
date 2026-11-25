@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { query } from "./db.js";
 import { env } from "./env.js";
+import { ensureEnvAdmin } from "./admin-account.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,8 +20,18 @@ export async function migrate() {
   }
 
   for (const address of env.adminEmails) {
-    await query("update users set role = 'admin', updated_at = now() where lower(email) = $1 and role <> 'admin'", [address]);
+    await query(
+      `update users
+          set role = 'admin',
+              email_verified_at = coalesce(email_verified_at, now()),
+              updated_at = now()
+        where lower(email) = $1 and (role <> 'admin' or email_verified_at is null)`,
+      [address]
+    );
   }
+
+  /* Creates the operator account from ADMIN_EMAIL/ADMIN_PASSWORD if it is not there yet. */
+  await ensureEnvAdmin();
 
   console.log(`[db] schema ready (${statements.length} statements)`);
 }

@@ -32,9 +32,19 @@ const devLink = (link) => (!emailConfigured && !env.isProd ? { previewUrl: link 
 /* Operator allowlist: the account becomes an admin as soon as it is created or
    signs in, even if it appeared after the last boot. */
 async function promoteIfAllowlisted(user) {
-  if (!user || user.role === "admin") return user;
-  if (!env.adminEmails.includes(String(user.email).toLowerCase())) return user;
-  return one("update users set role = 'admin', updated_at = now() where id = $1 returning *", [user.id]);
+  if (!user) return user;
+  const trusted = env.adminEmails.includes(String(user.email).toLowerCase());
+  if (!trusted) return user;
+  if (user.role === "admin" && user.email_verified_at) return user;
+  return one(
+    `update users
+        set role = 'admin',
+            email_verified_at = coalesce(email_verified_at, now()),
+            updated_at = now()
+      where id = $1
+      returning *`,
+    [user.id]
+  );
 }
 
 async function issueVerification(user) {
@@ -174,14 +184,16 @@ router.post("/login", async (req, res, next) => {
     if (!user || !(await checkPassword(body.password, user.password_hash))) {
       return res.status(401).json({ error: "Email or password is incorrect." });
     }
+    /* Allowlisted operator addresses skip the inbox round-trip, so a broken
+       mailbox setup cannot lock the owner out of the platform. */
+    user = await promoteIfAllowlisted(user);
+
     if (!user.email_verified_at) {
       return res.status(403).json({
         error: "Please verify your email address before signing in.",
         code: "EMAIL_UNVERIFIED",
       });
     }
-
-    user = await promoteIfAllowlisted(user);
 
     setSessionCookie(res, user.id);
     res.json({ ok: true, user: publicUser(user) });

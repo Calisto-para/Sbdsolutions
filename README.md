@@ -100,9 +100,13 @@ from the customer dashboard, is served with `noindex`, and its API (`/api/admin`
 answers 404 to anything that is not an admin session — signed-in clients only see
 the normal "page does not exist" screen.
 
-Access is granted by listing the account in `ADMIN_EMAILS`; those addresses are
-promoted on boot and again on each sign-in. An existing admin can also promote or
-demote another account from the Customers tab. The area shows account totals,
+`ADMIN_EMAIL` and `ADMIN_PASSWORD` are the operator login: on boot the app
+creates that account if it does not exist, marks it verified and admin, and
+resets its password to whatever `ADMIN_PASSWORD` currently holds — so changing
+the variable in Render is also the way to recover a lost operator password.
+`ADMIN_NAME` sets its display name. `ADMIN_EMAILS` adds further operator
+addresses, which sign in with their own existing password. An existing admin can
+also promote or demote another account from the Customers tab. The area shows account totals,
 newest signups, a searchable customer list with each customer's assistants and
 conversations, and every conversation started on the platform.
 

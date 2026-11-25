@@ -12,10 +12,16 @@ export const env = {
   sessionSecret: process.env.SESSION_SECRET || "dev-only-insecure-session-secret",
   cookieSecure: bool(process.env.COOKIE_SECURE),
   /* Comma-separated addresses that are promoted to the operator role on boot and sign-in. */
-  adminEmails: (process.env.ADMIN_EMAILS || "")
-    .split(",")
+  adminEmails: [
+    ...(process.env.ADMIN_EMAILS || "").split(","),
+    process.env.ADMIN_EMAIL || "",
+  ]
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean),
+  /* A single operator account created/updated from the environment at boot. */
+  adminEmail: (process.env.ADMIN_EMAIL || "").trim().toLowerCase(),
+  adminPassword: process.env.ADMIN_PASSWORD || "",
+  adminName: (process.env.ADMIN_NAME || "Administrator").trim(),
   openai: {
     apiKey: process.env.OPENAI_API_KEY || "",
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",

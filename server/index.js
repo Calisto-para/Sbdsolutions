@@ -132,6 +132,13 @@ const server = app.listen(port, "0.0.0.0", () => {
   const mailWarning = emailProviderName === "resend" ? senderWarning() : "";
   if (mailWarning) console.error(`[mail] ${mailWarning}`);
   console.log(`[server] AI: ${aiConfigured ? `OpenAI ${env.openai.model}` : "not configured — add OPENAI_API_KEY"}`);
+  console.log(
+    `[server] operator login: ${
+      env.adminEmail
+        ? `${env.adminEmail}${env.adminPassword ? " (password from ADMIN_PASSWORD)" : " — ADMIN_PASSWORD is missing"}`
+        : "no ADMIN_EMAIL set"
+    }`
+  );
   if (env.isProd && !dbConfigured) {
     console.error("[db] DATABASE_URL is not set in production — data will be lost on every deploy.");
   }

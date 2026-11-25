@@ -63,6 +63,7 @@ app.get("/api/health", (req, res) => {
     database: dbKind() || "not-initialised",
     dbReady: dbState.ready,
     dbError: dbState.error || null,
+    dbErrorStack: dbState.error && dbState.error.stack ? dbState.error.stack.split('\n').slice(0, 3).join('\n') : null,
     emailConfigured,
     emailProvider: emailProviderName,
     emailProviders: emailProviders(),

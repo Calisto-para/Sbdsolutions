@@ -98,6 +98,8 @@ export const emailConfigured = Boolean(
 );
 export const aiConfigured = Boolean(env.openai.apiKey);
 
+export const openaiPrices = env.openaiPrices;
+
 export const openaiPricesConfigured = (() => {
   const { inputPricePerM, outputPricePerM, cachedInputPricePerM } = env.openaiPrices;
   if (

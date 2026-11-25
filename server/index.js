@@ -56,6 +56,8 @@ app.get("/api/health", (req, res) => {
       EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || "auto",
     },
     aiConfigured,
+    /* Origin that verification and reset links use — safe to show, it is public. */
+    publicUrl: env.appUrl,
     environment: env.nodeEnv,
   });
 });

@@ -2,11 +2,24 @@ import "dotenv/config";
 
 const bool = (value) => String(value).toLowerCase() === "true";
 
+/* Public origin used in emailed links. A localhost value is useless in
+   production: it would send customers a link their browser cannot open. On
+   Render the service URL is always available as RENDER_EXTERNAL_URL, so use it
+   whenever APP_URL is missing or still points at a developer machine. */
+const trimUrl = (value) => String(value || "").trim().replace(/\/+$/, "");
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/i;
+const configuredAppUrl = trimUrl(process.env.APP_URL);
+const renderExternalUrl = trimUrl(process.env.RENDER_EXTERNAL_URL);
+const publicAppUrl =
+  [configuredAppUrl, renderExternalUrl].find((url) => url && !LOCAL_ORIGIN.test(url)) || "";
+const appUrl = publicAppUrl || configuredAppUrl || "http://localhost:3001";
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   isProd: process.env.NODE_ENV === "production",
   port: Number(process.env.PORT || 3002),
-  appUrl: (process.env.APP_URL || "http://localhost:3001").replace(/\/$/, ""),
+  appUrl,
+  appUrlIsLocal: LOCAL_ORIGIN.test(appUrl),
   databaseUrl: process.env.DATABASE_URL || "",
   pgliteDir: process.env.PGLITE_DIR || ".data/pglite",
   sessionSecret: process.env.SESSION_SECRET || "dev-only-insecure-session-secret",
@@ -60,4 +73,14 @@ export const aiConfigured = Boolean(env.openai.apiKey);
 
 if (env.isProd && env.sessionSecret.startsWith("dev-only")) {
   console.warn("[config] SESSION_SECRET is not set — set it before running in production.");
+}
+
+if (env.isProd && env.appUrlIsLocal) {
+  console.error(
+    `[config] Emailed links would point at ${env.appUrl}. Set APP_URL to the public origin (for example https://sbdaisolutions.onrender.com) so verification and reset links open the live site.`
+  );
+} else if (env.isProd && configuredAppUrl && LOCAL_ORIGIN.test(configuredAppUrl) && publicAppUrl) {
+  console.warn(
+    `[config] APP_URL is ${configuredAppUrl} — using ${appUrl} for emailed links instead. Set APP_URL to ${appUrl} to make this explicit.`
+  );
 }

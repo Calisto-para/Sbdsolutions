@@ -84,7 +84,7 @@ Copy `.env.example` to `.env`:
 | --- | --- |
 | `DATABASE_URL` | Neon Postgres connection string (`?sslmode=require`) |
 | `SESSION_SECRET` | long random string used to sign sessions |
-| `APP_URL` | public origin, used in verification and reset links |
+| `APP_URL` | public origin, used in verification and reset links — in production it must be the live site, because a localhost value would email links customers cannot open (Render's `RENDER_EXTERNAL_URL` is used automatically when `APP_URL` is unset or local) |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | assistant replies (default `gpt-4o-mini`) |
 | `BREVO_API_KEY` | Brevo API key — the default transactional sender |
 | `RESEND_API_KEY` | Resend API key — used if Brevo fails or is not set |

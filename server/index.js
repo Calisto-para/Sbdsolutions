@@ -235,8 +235,15 @@ async function runMigration() {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  for (const statement of statements) {
-    await query(statement);
+  for (let i = 0; i < statements.length; i++) {
+    const statement = statements[i];
+    try {
+      await query(statement);
+    } catch (err) {
+      console.error(`[db] statement ${i + 1}/${statements.length} failed: ${err.message}`);
+      console.error(`[db] statement text: ${statement.slice(0, 200)}`);
+      throw err;
+    }
   }
 
   const { env: _env } = await import("./env.js");

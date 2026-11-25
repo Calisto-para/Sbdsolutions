@@ -3,7 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { buildSystemPrompt, complete } from "../ai.js";
+import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
 import {
   assistantAllowanceError,
   checkTokenLimit,

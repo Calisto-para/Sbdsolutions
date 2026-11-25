@@ -6,7 +6,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
-import { emailProviderName } from "./mail.js";
+import { emailProviderName, emailProviders } from "./mail.js";
 import { senderWarning } from "./mail-check.js";
 import { migrate } from "./migrate.js";
 import { dbKind, dbState } from "./db.js";
@@ -41,6 +41,8 @@ app.get("/api/health", (req, res) => {
     dbReady: dbState.ready,
     emailConfigured,
     emailProvider: emailProviderName,
+    emailProviders: emailProviders(),
+    emailProviderRequested: env.mail.provider || "",
     aiConfigured,
     environment: env.nodeEnv,
   });
@@ -125,12 +127,17 @@ const server = app.listen(port, "0.0.0.0", () => {
   console.log(
     `[server] email: ${
       emailConfigured
-        ? `${emailProviderName} configured`
+        ? `${emailProviders().join(" → ")} configured, ${emailProviderName} first`
         : "not configured — verification links are logged and shown on screen"
     }`
   );
   const mailWarning = emailProviderName === "resend" ? senderWarning() : "";
   if (mailWarning) console.error(`[mail] ${mailWarning}`);
+  if (env.mail.provider && emailProviderName !== env.mail.provider) {
+    console.error(
+      `[mail] EMAIL_PROVIDER=${env.mail.provider} is not usable (missing API key or SMTP host) — sending via ${emailProviderName || "nothing"} instead.`
+    );
+  }
   console.log(`[server] AI: ${aiConfigured ? `OpenAI ${env.openai.model}` : "not configured — add OPENAI_API_KEY"}`);
   console.log(
     `[server] operator login: ${

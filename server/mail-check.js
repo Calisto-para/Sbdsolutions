@@ -70,7 +70,20 @@ async function resendCheck() {
 
 async function brevoCheck() {
   const origin = base(env.mail.brevo.apiUrl, "https://api.brevo.com");
-  const data = await getJson(`${origin}/v3/senders`, { "api-key": env.mail.brevo.apiKey });
+  let data;
+  try {
+    data = await getJson(`${origin}/v3/senders`, { "api-key": env.mail.brevo.apiKey });
+  } catch (error) {
+    const wrongKey = /401|403/.test(error.message) && !env.mail.brevo.apiKey.startsWith("xkeysib-");
+    return {
+      provider: "brevo",
+      ok: false,
+      verifiedDomains: [],
+      message: wrongKey
+        ? "Brevo rejected the key. The transactional API needs a v3 API key (starts with xkeysib-), not an SMTP key (xsmtpsib-). Get one from app.brevo.com → SMTP & API → API Keys."
+        : `Brevo could not be checked: ${error.message}`,
+    };
+  }
   const senders = Array.isArray(data) ? data : data.senders || [];
   const address = senderAddress().toLowerCase();
   const match = senders.find((sender) => String(sender.email || "").toLowerCase() === address);

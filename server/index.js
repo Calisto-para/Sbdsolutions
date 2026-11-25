@@ -235,10 +235,11 @@ async function runMigration() {
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const db = await getImplementation();
   for (let i = 0; i < statements.length; i++) {
     const statement = statements[i];
     try {
-      await query(statement);
+      await db.query(statement);
     } catch (err) {
       console.error(`[db] statement ${i + 1}/${statements.length} failed: ${err.message}`);
       console.error(`[db] statement text: ${statement.slice(0, 200)}`);
@@ -248,7 +249,7 @@ async function runMigration() {
 
   const { env: _env } = await import("./env.js");
   for (const address of _env.adminEmails) {
-    await query(
+    await db.query(
       `update users
           set role = 'admin',
               email_verified_at = coalesce(email_verified_at, now()),

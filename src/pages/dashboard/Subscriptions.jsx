@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 
-const money = (amount, currency) =>
-  amount === 0 ? "Free" : `${currency} ${Number(amount).toFixed(2)}`;
+const money = (amount, currency) => `${currency} ${Number(amount || 0).toFixed(2)}`;
 
 const WHATSAPP =
   "https://wa.me/2349063924288?text=" +
@@ -15,6 +14,8 @@ export default function Subscriptions() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
+  const [checkout, setCheckout] = useState(null);
+  const [reference, setReference] = useState("");
 
   const load = () =>
     api("/subscriptions")
@@ -25,14 +26,66 @@ export default function Subscriptions() {
     load();
   }, []);
 
+  const pending = useMemo(
+    () => (data?.payments || []).filter((payment) => payment.status === "pending"),
+    [data]
+  );
+
+  async function verify(paymentId, quiet = false) {
+    setBusy(`verify-${paymentId}`);
+    if (!quiet) {
+      setError("");
+      setNotice("");
+    }
+    try {
+      const next = await api(`/subscriptions/payments/${paymentId}/verify`, { method: "POST" });
+      await load();
+      setNotice(next.message);
+      setCheckout(null);
+    } catch (err) {
+      if (!quiet) setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /* Returning from the payment page: confirm the payment straight away. */
+  useEffect(() => {
+    if (!data) return;
+    const id = new URLSearchParams(window.location.search).get("payment");
+    if (id) verify(id);
+  }, [data?.planId]);
+
   async function change(planId) {
     setBusy(planId);
     setError("");
     setNotice("");
     try {
       const next = await api("/subscriptions", { method: "POST", body: { planId } });
-      setData((current) => ({ ...current, ...next }));
+      setCheckout(next);
+      setReference("");
       setNotice(next.message);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function submitReference(event) {
+    event.preventDefault();
+    if (!checkout?.payment) return;
+    setBusy("submit");
+    setError("");
+    try {
+      const next = await api(`/subscriptions/payments/${checkout.payment.id}/submit`, {
+        method: "POST",
+        body: { note: reference.trim() },
+      });
+      setNotice(next.message);
+      setReference("");
+      await load();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,8 +100,8 @@ export default function Subscriptions() {
     setNotice("");
     try {
       const next = await api("/subscriptions/cancel", { method: "POST" });
-      setData((current) => ({ ...current, ...next }));
       setNotice(next.message);
+      await load();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -61,11 +114,20 @@ export default function Subscriptions() {
 
   const messagePercent = Math.min(100, Math.round((data.usage.messages / Math.max(1, data.usage.messageLimit)) * 100));
   const assistantPercent = Math.min(100, Math.round((data.usage.assistants / Math.max(1, data.usage.assistantLimit)) * 100));
+  const bank = data.paymentConfig?.bank;
+  const online = data.paymentConfig?.online;
 
   return (
     <div className="dash-stack">
       {error ? <div className="form-alert form-alert--error">{error}</div> : null}
       {notice ? <div className="form-alert form-alert--ok">{notice}</div> : null}
+
+      {!data.active ? (
+        <div className="form-alert form-alert--error">
+          Your plan is not active yet. Choose a plan below, pay the invoice, and it activates as soon as the payment is
+          verified.
+        </div>
+      ) : null}
 
       <section className="panel">
         <div className="panel-head panel-head--row">
@@ -75,15 +137,13 @@ export default function Subscriptions() {
               {data.plan?.name} ·{" "}
               {data.plan?.custom
                 ? data.plan?.billingNote || "Custom billing"
-                : `${money(data.plan?.price || 0, data.plan?.currency || "USD")} per month`}
+                : `${money(data.plan?.price, data.plan?.currency)} per month`}
               {data.status === "canceled" ? " · cancelled" : ""}
             </p>
           </div>
-          {data.status === "canceled" ? (
-            <span className="admin-pill admin-pill--muted">Ends {dateFormat.format(new Date(data.currentPeriodEnd))}</span>
-          ) : (
-            <span className="admin-pill">Active</span>
-          )}
+          <span className={`admin-pill${data.active ? "" : " admin-pill--muted"}`}>
+            {data.active ? (data.status === "canceled" ? "Cancelled" : "Active") : "Not active"}
+          </span>
         </div>
 
         <div className="usage-grid">
@@ -113,20 +173,105 @@ export default function Subscriptions() {
           </div>
         </div>
 
-        <p className="panel-note">
-          Renews on {dateFormat.format(new Date(data.currentPeriodEnd))}. Plans are billed by the SBD team; every change is
-          recorded in your payment history below.
-        </p>
+        {data.active ? (
+          <p className="panel-note">
+            Renews on {dateFormat.format(new Date(data.currentPeriodEnd))}. Plans are billed by the SBD team; every
+            payment is recorded below.
+          </p>
+        ) : null}
       </section>
+
+      {checkout?.payment ? (
+        <section className="panel checkout">
+          <div className="panel-head">
+            <h2>Pay for the {checkout.payment.planId} plan</h2>
+            <p>
+              Invoice <strong>{checkout.payment.reference}</strong> ·{" "}
+              {money(checkout.payment.amount, checkout.payment.currency)}
+            </p>
+          </div>
+
+          {checkout.authorizationUrl ? (
+            <div className="checkout-online">
+              <p>Pay by card, bank transfer or USSD. The payment is confirmed instantly and the plan activates.</p>
+              <a className="btn btn--primary btn--sm" href={checkout.authorizationUrl}>
+                Pay {money(checkout.payment.amount, checkout.payment.currency)} now
+              </a>
+              {checkout.payment.status === "pending" ? (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  disabled={busy === `verify-${checkout.payment.id}`}
+                  onClick={() => verify(checkout.payment.id)}
+                >
+                  {busy === `verify-${checkout.payment.id}` ? "Checking…" : "I have paid — check now"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {checkout.onlineError ? (
+            <div className="form-alert form-alert--error">
+              The online payment page could not be opened ({checkout.onlineError}). Use the bank transfer details below.
+            </div>
+          ) : null}
+
+          {bank ? (
+            <div className="checkout-bank">
+              <h3>Or pay by bank transfer</h3>
+              <dl className="admin-facts">
+                {bank.name ? <div><dt>Bank</dt><dd>{bank.name}</dd></div> : null}
+                <div><dt>Account name</dt><dd>{bank.accountName}</dd></div>
+                <div><dt>Account number</dt><dd>{bank.accountNumber}</dd></div>
+                <div><dt>Amount</dt><dd>{money(checkout.payment.amount, checkout.payment.currency)}</dd></div>
+                <div><dt>Reference</dt><dd>{checkout.payment.reference}</dd></div>
+              </dl>
+              {bank.instructions ? <p className="panel-note">{bank.instructions}</p> : null}
+              <form className="dash-form" onSubmit={submitReference}>
+                <div className="field field--full">
+                  <label htmlFor="payRef">Transfer reference / teller number</label>
+                  <input
+                    id="payRef"
+                    value={reference}
+                    onChange={(event) => setReference(event.target.value)}
+                    placeholder="e.g. the reference on your transfer receipt"
+                    maxLength={300}
+                    required
+                  />
+                </div>
+                <button className="btn btn--primary btn--sm" type="submit" disabled={busy === "submit"}>
+                  {busy === "submit" ? "Submitting…" : "I have paid — submit reference"}
+                </button>
+              </form>
+              <p className="panel-note">
+                Bank transfers are verified by the SBD team, and the plan activates as soon as they confirm it.
+              </p>
+            </div>
+          ) : null}
+
+          {!checkout.authorizationUrl && !bank ? (
+            <div className="form-alert form-alert--error">
+              No payment method is set up yet. Message us on WhatsApp (+234 906 392 4288) and we will take your payment
+              and activate the plan.
+            </div>
+          ) : null}
+
+          <div className="panel-actions">
+            <button type="button" className="panel-link" onClick={() => setCheckout(null)}>
+              Close
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel">
         <div className="panel-head">
           <h2>Available plans</h2>
-          <p>Change whenever you like — upgrades and downgrades apply immediately.</p>
+          <p>Payment is required — choosing a plan opens an invoice, it does not activate the plan by itself.</p>
         </div>
         <div className="plan-grid">
           {data.plans.map((plan) => {
-            const current = plan.id === data.planId;
+            const current = plan.id === data.planId && data.active;
             return (
               <article className={`plan-card${current ? " is-current" : ""}`} key={plan.id}>
                 <div className="plan-head">
@@ -156,7 +301,7 @@ export default function Subscriptions() {
                     {current
                       ? "Current plan"
                       : busy === plan.id
-                        ? "Changing…"
+                        ? "Opening invoice…"
                         : plan.price > (data.plan?.price || 0)
                           ? "Upgrade"
                           : "Choose plan"}
@@ -166,7 +311,7 @@ export default function Subscriptions() {
             );
           })}
         </div>
-        {data.status !== "canceled" ? (
+        {data.active && data.status !== "canceled" ? (
           <div className="panel-actions">
             <button type="button" className="btn btn--ghost btn--sm" onClick={cancel} disabled={busy === "cancel"}>
               Cancel subscription
@@ -175,10 +320,43 @@ export default function Subscriptions() {
         ) : null}
       </section>
 
+      {pending.length ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Waiting for payment</h2>
+            <p>Plans activate only after the payment is verified.</p>
+          </div>
+          <ul className="activity-list">
+            {pending.map((payment) => (
+              <li key={payment.id}>
+                <strong>{payment.reference || "Invoice"} · {money(payment.amount, payment.currency)}</strong>
+                <span>
+                  {payment.planId} plan · {payment.method === "paystack" ? "online" : "bank transfer"}
+                  {payment.note ? ` · reference: ${payment.note}` : ""} ·{" "}
+                  {payment.note ? "awaiting verification" : "awaiting payment"}
+                </span>
+                <span className="panel-actions">
+                  {online ? (
+                    <button
+                      type="button"
+                      className="panel-link"
+                      disabled={busy === `verify-${payment.id}`}
+                      onClick={() => verify(payment.id)}
+                    >
+                      {busy === `verify-${payment.id}` ? "Checking…" : "Check payment"}
+                    </button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panel-head">
           <h2>Payment history</h2>
-          <p>Invoices and plan changes on your account.</p>
+          <p>Invoices, payments and their verification.</p>
         </div>
         {data.payments.length ? (
           <div className="admin-table-wrap">
@@ -186,6 +364,7 @@ export default function Subscriptions() {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Reference</th>
                   <th>Plan</th>
                   <th>Amount</th>
                   <th>Status</th>
@@ -196,6 +375,7 @@ export default function Subscriptions() {
                 {data.payments.map((payment) => (
                   <tr key={payment.id}>
                     <td>{dateFormat.format(new Date(payment.createdAt))}</td>
+                    <td>{payment.reference || "—"}</td>
                     <td>{payment.planId}</td>
                     <td>{money(payment.amount, payment.currency)}</td>
                     <td>
@@ -203,14 +383,14 @@ export default function Subscriptions() {
                         {payment.status}
                       </span>
                     </td>
-                    <td>{payment.description}</td>
+                    <td>{payment.rejectedReason || payment.note || payment.description}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="empty">No payments yet — you are on the free plan.</div>
+          <div className="empty">No payments yet.</div>
         )}
       </section>
     </div>

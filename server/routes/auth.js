@@ -105,6 +105,16 @@ router.post("/register", async (req, res, next) => {
     }
 
     await promoteIfAllowlisted(user);
+
+    /* Registering is not a purchase: the plan stays unpaid until a payment is
+       verified, so choosing a plan always goes through checkout. */
+    await query(
+      `insert into subscriptions (user_id, plan_id, status)
+       select $1, 'starter', 'unpaid'
+        where not exists (select 1 from subscriptions where user_id = $1)`,
+      [user.id]
+    );
+
     const verification = await issueVerification(user);
 
     res.status(201).json({

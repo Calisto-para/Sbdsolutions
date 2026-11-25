@@ -67,6 +67,11 @@ app.get("/api/health", (req, res) => {
       EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || "auto",
     },
     aiConfigured,
+    /* Which ways customers can pay. Booleans only — no keys or account numbers. */
+    paymentMethods: {
+      online: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      bank: Boolean(process.env.PAYMENT_ACCOUNT_NUMBER && process.env.PAYMENT_ACCOUNT_NAME),
+    },
     /* Origin that verification and reset links use — safe to show, it is public. */
     publicUrl: env.appUrl,
     environment: env.nodeEnv,

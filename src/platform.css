@@ -1968,3 +1968,25 @@
   color: #23324d;
   white-space: pre-wrap;
 }
+
+.checkout {
+  border-color: #0b5cff;
+  box-shadow: 0 14px 34px rgba(11, 92, 255, 0.1);
+}
+
+.checkout-online,
+.checkout-bank {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.checkout-online p,
+.checkout-bank h3 {
+  margin: 0;
+}
+
+.checkout-bank .admin-facts {
+  margin: 0;
+}

@@ -7,11 +7,13 @@ import AdminOverview from "./AdminOverview";
 import AdminUsers from "./AdminUsers";
 import AdminConversations from "./AdminConversations";
 import AdminPlatform from "./AdminPlatform";
+import AdminPayments from "./AdminPayments";
 
 const SECTIONS = [
   { key: "overview", label: "Overview" },
   { key: "users", label: "Customers" },
   { key: "platform", label: "Businesses & usage" },
+  { key: "payments", label: "Payments" },
   { key: "conversations", label: "Conversations" },
 ];
 
@@ -104,6 +106,7 @@ export default function Admin() {
           {tab === "overview" ? <AdminOverview onOpenUser={() => go("users")} /> : null}
           {tab === "users" ? <AdminUsers /> : null}
           {tab === "platform" ? <AdminPlatform /> : null}
+          {tab === "payments" ? <AdminPayments /> : null}
           {tab === "conversations" ? <AdminConversations /> : null}
         </div>
       </div>

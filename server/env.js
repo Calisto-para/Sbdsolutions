@@ -35,6 +35,23 @@ export const env = {
   adminEmail: (process.env.ADMIN_EMAIL || "").trim().toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || "",
   adminName: (process.env.ADMIN_NAME || "Administrator").trim(),
+  payments: {
+    /* Paystack gives instant, server-verified card/bank payments. Optional: the
+       bank-transfer route below works without it. */
+    paystack: {
+      secretKey: process.env.PAYSTACK_SECRET_KEY || "",
+      apiUrl: (process.env.PAYSTACK_API_URL || "https://api.paystack.co").replace(/\/$/, ""),
+      /* Empty means: use the plan's own currency. */
+      currency: process.env.PAYSTACK_CURRENCY || "",
+    },
+    /* Public account details shown on the checkout screen. */
+    bank: {
+      name: process.env.PAYMENT_BANK_NAME || "",
+      accountName: process.env.PAYMENT_ACCOUNT_NAME || "",
+      accountNumber: process.env.PAYMENT_ACCOUNT_NUMBER || "",
+      instructions: process.env.PAYMENT_INSTRUCTIONS || "",
+    },
+  },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || "",
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",

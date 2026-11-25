@@ -4,6 +4,7 @@ import { query, one } from "../db.js";
 import { requireAdmin, publicUser } from "../auth.js";
 import { mailDiagnostics } from "../mail-check.js";
 import { sendTestEmail } from "../mail.js";
+import { activatePayment, paymentView } from "../payments.js";
 
 /* Operator area. Every route is admin-only and answers 404 to anyone else, so
    the area is invisible to clients. */
@@ -26,7 +27,8 @@ router.get("/", async (req, res, next) => {
          (select count(*)::int from knowledge_items) as knowledge_items,
          (select count(*)::int from users where suspended_at is not null) as suspended_users,
          (select count(*)::int from leads) as leads,
-         (select count(*)::int from messages where created_at > now() - interval '7 days') as messages_week`
+         (select count(*)::int from messages where created_at > now() - interval '7 days') as messages_week,
+         (select count(*)::int from payments where status = 'pending') as pending_payments`
     );
 
     const recentUsers = await query(
@@ -61,6 +63,7 @@ router.get("/", async (req, res, next) => {
         suspendedUsers: totals.suspended_users,
         leads: totals.leads,
         messagesThisWeek: totals.messages_week,
+        pendingPayments: totals.pending_payments,
       },
       recentUsers: recentUsers.map((row) => ({
         id: row.id,
@@ -231,6 +234,81 @@ router.patch("/users/:id", async (req, res, next) => {
           ? `${updated.full_name} can sign in again.`
           : "Account updated.",
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Payment verification: an operator can confirm a bank transfer (or an online
+   payment the provider has not confirmed yet) and that activates the plan. */
+router.get("/payments", async (req, res, next) => {
+  try {
+    const status = ["pending", "paid", "rejected"].includes(String(req.query.status))
+      ? String(req.query.status)
+      : "";
+    const q = searchTerm(req.query.q);
+    const rows = await query(
+      `select p.*, u.full_name, u.email, pl.name as plan_name
+         from payments p
+         join users u on u.id = p.user_id
+         left join plans pl on pl.id = p.plan_id
+        where ($1 = '' or p.status = $1)
+          and ($2 = '%%' or u.full_name ilike $2 or u.email ilike $2
+               or p.reference ilike $2 or p.note ilike $2)
+        order by p.created_at desc
+        limit 100`,
+      [status, q]
+    );
+
+    const totals = await one(
+      `select
+         (select count(*)::int from payments where status = 'pending') as pending,
+         (select count(*)::int from payments where status = 'paid') as paid,
+         (select count(*)::int from payments where status = 'rejected') as rejected`
+    );
+
+    res.json({
+      payments: rows.map((row) => ({
+        ...paymentView(row),
+        planName: row.plan_name || row.plan_id,
+        customerName: row.full_name,
+        customerEmail: row.email,
+      })),
+      totals,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/payments/:id/verify", async (req, res, next) => {
+  try {
+    const payment = await one("select * from payments where id = $1", [req.params.id]);
+    if (!payment) return res.status(404).json({ error: "Payment not found." });
+    if (payment.status === "rejected") {
+      return res.status(400).json({ error: "This payment was rejected. Ask the customer to choose the plan again." });
+    }
+
+    await activatePayment(payment, { verifiedBy: req.user.id, method: payment.method || "transfer" });
+    res.json({ ok: true, message: `Payment verified. The customer is now on the plan.` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/payments/:id/reject", async (req, res, next) => {
+  try {
+    const { reason } = z
+      .object({ reason: z.string().trim().max(300).optional().default("") })
+      .parse(req.body || {});
+
+    const updated = await one(
+      `update payments set status = 'rejected', rejected_reason = $2 where id = $1 returning *`,
+      [req.params.id, reason || "Not received"]
+    );
+    if (!updated) return res.status(404).json({ error: "Payment not found." });
+
+    res.json({ ok: true, message: "Payment rejected. The plan was not activated." });
   } catch (error) {
     next(error);
   }

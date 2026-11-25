@@ -52,10 +52,14 @@ const shape = (plan) =>
 export async function subscriptionSummary(userId) {
   const { subscription, plan } = await currentPlan(userId);
   const usage = await usageFor(userId);
+  const active =
+    subscription.status === "active" ||
+    (subscription.status === "canceled" && new Date(subscription.current_period_end) > new Date());
   return {
     planId: subscription.plan_id,
     plan: shape(plan),
     status: subscription.status,
+    active,
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
     startedAt: subscription.started_at,
     currentPeriodEnd: subscription.current_period_end,

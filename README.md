@@ -135,10 +135,13 @@ conversations, and every conversation started on the platform.
   monthly or agreed billing; chosen with the SBD team over WhatsApp). Prices,
   names and limits live in the `plans` seed in `server/schema.sql` and are kept
   in step on every boot. Customers see their plan, usage against the monthly
-  allowances, upgrade/downgrade or cancel, and a payment history. Paid changes
-  take effect immediately and are recorded as invoices settled with the SBD
-  team; the platform does not charge a card. Allowances are enforced when
-  adding an assistant and when a visitor sends a message.
+  allowances, upgrade/downgrade or cancel, and a payment history. Registering
+  does **not** start a paid plan: choosing a plan opens an invoice, and the plan
+  activates only when the money is verified. With `PAYSTACK_SECRET_KEY` set the
+  checkout hands the customer to Paystack and the server verifies the charge
+  instantly; bank transfers are shown from `PAYMENT_BANK_*` and verified by an
+  operator in **Admin → Payments** (verify or reject, both one click). Allowances
+  are enforced when adding an assistant and when a visitor sends a message.
 - **Operator monitoring** — the unlisted `/admin` area adds a **Businesses &
   usage** tab with every business and assistant, weekly activity per day, the
   busiest customers, and suspend/reactivate controls on any non-operator

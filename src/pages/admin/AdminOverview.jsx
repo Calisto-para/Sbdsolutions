@@ -26,6 +26,7 @@ export default function AdminOverview() {
     { label: "Conversations", value: data.stats.conversations },
     { label: "Messages", value: data.stats.messages, note: `${data.stats.messagesThisWeek} this week` },
     { label: "Leads collected", value: data.stats.leads },
+    { label: "Payments to verify", value: data.stats.pendingPayments },
     { label: "Training items", value: data.stats.knowledgeItems },
     { label: "Suspended accounts", value: data.stats.suspendedUsers },
   ];

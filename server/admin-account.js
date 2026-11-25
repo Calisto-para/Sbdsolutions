@@ -32,6 +32,12 @@ export async function ensureEnvAdmin() {
        returning *`,
       [env.adminName || "Administrator", email, await hashPassword(password)]
     );
+    await query(
+      `insert into subscriptions (user_id, plan_id, status)
+       values ($1, 'starter', 'active')
+       on conflict (user_id) do nothing`,
+      [created.id]
+    );
     console.log(`[admin] created operator account ${email}`);
     return created;
   }
@@ -47,6 +53,15 @@ export async function ensureEnvAdmin() {
       returning *`,
     [existing.id, samePassword ? existing.password_hash : await hashPassword(password)]
   );
+  /* Operators are not billed for their own platform access. */
+  await query(
+    `insert into subscriptions (user_id, plan_id, status)
+     values ($1, 'starter', 'active')
+     on conflict (user_id) do update set status = 'active', updated_at = now()
+      where subscriptions.status = 'unpaid'`,
+    [updated.id]
+  );
+
   console.log(
     `[admin] operator account ${email} ready${samePassword ? "" : " (password updated from the environment)"}`
   );

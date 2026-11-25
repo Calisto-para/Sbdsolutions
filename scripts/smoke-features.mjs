@@ -76,6 +76,45 @@ const ai = http.createServer((req, res) => {
 });
 await new Promise((resolve) => ai.listen(4035, "127.0.0.1", resolve));
 
+/* Paystack stand-in: remembers the amount for each reference and confirms it. */
+const paystackAmounts = new Map();
+const paystack = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => (body += chunk));
+  req.on("end", () => {
+    res.setHeader("content-type", "application/json");
+    if (req.method === "POST" && req.url === "/transaction/initialize") {
+      const parsed = JSON.parse(body || "{}");
+      paystackAmounts.set(parsed.reference, parsed.amount);
+      return res.end(
+        JSON.stringify({
+          status: true,
+          data: {
+            authorization_url: `https://checkout.example/pay/${parsed.reference}`,
+            access_code: "stub",
+            reference: parsed.reference,
+          },
+        })
+      );
+    }
+    const verify = String(req.url || "").match(/^\/transaction\/verify\/(.+)$/);
+    if (req.method === "GET" && verify) {
+      const reference = decodeURIComponent(verify[1]);
+      const amount = paystackAmounts.get(reference);
+      if (!amount) {
+        res.statusCode = 404;
+        return res.end(JSON.stringify({ status: false, message: "Transaction not found" }));
+      }
+      return res.end(
+        JSON.stringify({ status: true, data: { status: "success", amount, currency: "USD", reference } })
+      );
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ status: false, message: "Not found" }));
+  });
+});
+await new Promise((resolve) => paystack.listen(4037, "127.0.0.1", resolve));
+
 async function call(path, { method = "GET", body, cookie = "", form } = {}) {
   const response = await fetch(`${BASE}${path}`, {
     method,
@@ -118,6 +157,39 @@ const clientEmail = `client${stamp}@example.com`;
 const login = await registerAndLogin(clientEmail, "Feature Client");
 const cookie = login.cookie;
 check("client signs in", login.status === 200, JSON.stringify(login.data));
+
+console.log("payment gate");
+const initialPlan = await call("/api/subscriptions", { cookie });
+check("registration is not automatically paid", initialPlan.data.active === false && initialPlan.data.status === "unpaid", JSON.stringify({ active: initialPlan.data.active, status: initialPlan.data.status }));
+check("plan catalogue listed", initialPlan.data.plan?.id === "starter" && initialPlan.data.plans?.length === 4, JSON.stringify(initialPlan.data.plan));
+check(
+  "prices are 100, 200, 400 and enterprise is custom",
+  initialPlan.data.plans.map((plan) => plan.price).slice(0, 3).join(",") === "100,200,400" &&
+    initialPlan.data.plans[3].custom === true &&
+    /agreed/i.test(initialPlan.data.plans[3].billingNote),
+  JSON.stringify(initialPlan.data.plans.map((plan) => [plan.id, plan.price, plan.custom]))
+);
+
+const invoice = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "starter" } });
+check(
+  "choosing a plan opens an invoice instead of activating",
+  invoice.status === 201 && invoice.data.payment?.status === "pending" && invoice.data.active === false,
+  JSON.stringify(invoice.data).slice(0, 200)
+);
+check("an online payment link is offered", /^https:\/\//.test(invoice.data.authorizationUrl || ""), invoice.data.authorizationUrl);
+check("bank transfer details are offered", invoice.data.paymentConfig?.bank?.accountNumber === "0123456789", JSON.stringify(invoice.data.paymentConfig));
+
+const stillUnpaid = await call("/api/subscriptions", { cookie });
+check("plan stays inactive until the money is verified", stillUnpaid.data.active === false, JSON.stringify(stillUnpaid.data.planId));
+
+const instantlyPaid = await call(`/api/subscriptions/payments/${invoice.data.payment.id}/verify`, { method: "POST", cookie });
+check("online payment verifies instantly", instantlyPaid.status === 200 && instantlyPaid.data.active === true, JSON.stringify(instantlyPaid.data).slice(0, 200));
+check("plan activated after payment", instantlyPaid.data.planId === "starter" && instantlyPaid.data.plan?.price === 100, JSON.stringify(instantlyPaid.data.plan));
+check(
+  "invoice is marked paid",
+  instantlyPaid.data.payments?.find((payment) => payment.id === invoice.data.payment.id)?.status === "paid",
+  JSON.stringify(instantlyPaid.data.payments?.[0])
+);
 
 console.log("chatbot configuration");
 const created = await call("/api/assistants", {
@@ -299,25 +371,11 @@ check("resolved filter works", resolvedFilter.data.conversations?.length === 1);
 
 console.log("subscriptions");
 const subscription = await call("/api/subscriptions", { cookie });
-check("plan listed", subscription.data.plan?.id === "starter" && subscription.data.plans?.length === 4, JSON.stringify(subscription.data.plan));
-check(
-  "prices are 100, 200, 400 and enterprise is custom",
-  subscription.data.plans.map((plan) => plan.price).slice(0, 3).join(",") === "100,200,400" &&
-    subscription.data.plans[3].custom === true &&
-    /agreed/i.test(subscription.data.plans[3].billingNote),
-  JSON.stringify(subscription.data.plans.map((plan) => [plan.id, plan.price, plan.custom]))
-);
+check("active plan listed", subscription.data.plan?.id === "starter" && subscription.data.active === true, JSON.stringify(subscription.data.plan));
 check("usage counted", subscription.data.usage?.messages >= 3 && subscription.data.usage?.assistants === 1, JSON.stringify(subscription.data.usage));
 
 const enterprisePlan = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "enterprise" } });
 check("enterprise cannot be self-served", enterprisePlan.status === 400 && enterprisePlan.data.code === "CUSTOM_PLAN", JSON.stringify(enterprisePlan.data));
-
-const upgraded = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "professional" } });
-check("plan upgraded", upgraded.data.planId === "professional" && upgraded.data.plan?.price === 200, JSON.stringify(upgraded.data.plan));
-check("upgrade recorded in payment history", upgraded.data.payments?.[0]?.planId === "professional" && upgraded.data.payments[0].status === "pending", JSON.stringify(upgraded.data.payments?.[0]));
-
-const secondAssistant = await call("/api/assistants", { method: "POST", cookie, body: { name: "Support Bot" } });
-check("higher plan allows another assistant", secondAssistant.status === 201, JSON.stringify(secondAssistant.data));
 
 const customPlan = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "not-a-plan" } });
 check("unknown plan rejected", customPlan.status === 404, JSON.stringify(customPlan.data));
@@ -359,6 +417,58 @@ check("reactivated account signs in again", afterLogin.status === 200, JSON.stri
 const afterApi = await call("/api/assistants", { cookie: afterLogin.cookie });
 check("reactivated account can use the API", afterApi.status === 200, JSON.stringify(afterApi.data).slice(0, 120));
 
+console.log("bank transfer verified by the operator");
+const transfer = await call("/api/subscriptions", {
+  method: "POST",
+  cookie: afterLogin.cookie,
+  body: { planId: "professional" },
+});
+check("upgrade invoice created", transfer.status === 201 && transfer.data.payment?.amount === 200, JSON.stringify(transfer.data).slice(0, 200));
+check("plan is not upgraded before payment", transfer.data.planId === "starter", String(transfer.data.planId));
+
+const submitted = await call(`/api/subscriptions/payments/${transfer.data.payment.id}/submit`, {
+  method: "POST",
+  cookie: afterLogin.cookie,
+  body: { note: "TRX-778812" },
+});
+check("transfer reference recorded", submitted.status === 200 && /reference received/i.test(submitted.data.message || ""), JSON.stringify(submitted.data).slice(0, 160));
+
+const operatorPayments = await call("/api/admin/payments?status=pending", { cookie: operator });
+const pendingRow = operatorPayments.data.payments?.find((payment) => payment.id === transfer.data.payment.id);
+check("operator sees the pending payment", Boolean(pendingRow) && pendingRow.note === "TRX-778812", JSON.stringify(operatorPayments.data.payments?.slice(0, 2)));
+
+const verifiedByOperator = await call(`/api/admin/payments/${transfer.data.payment.id}/verify`, {
+  method: "POST",
+  cookie: operator,
+});
+check("operator verifies the payment", verifiedByOperator.status === 200, JSON.stringify(verifiedByOperator.data));
+
+const upgraded = await call("/api/subscriptions", { cookie: afterLogin.cookie });
+check("verified payment activates the plan", upgraded.data.planId === "professional" && upgraded.data.active === true, JSON.stringify({ plan: upgraded.data.planId, active: upgraded.data.active }));
+check(
+  "payment history shows it as paid",
+  upgraded.data.payments?.find((payment) => payment.id === transfer.data.payment.id)?.status === "paid",
+  JSON.stringify(upgraded.data.payments?.find((payment) => payment.id === transfer.data.payment.id))
+);
+
+const secondAssistant = await call("/api/assistants", { method: "POST", cookie: afterLogin.cookie, body: { name: "Support Bot" } });
+check("paid plan allows another assistant", secondAssistant.status === 201, JSON.stringify(secondAssistant.data));
+
+const rejectedInvoice = await call("/api/subscriptions", { method: "POST", cookie: afterLogin.cookie, body: { planId: "business" } });
+const rejected = await call(`/api/admin/payments/${rejectedInvoice.data.payment.id}/reject`, {
+  method: "POST",
+  cookie: operator,
+  body: { reason: "Transfer not received" },
+});
+check("operator can reject a payment", rejected.status === 200, JSON.stringify(rejected.data));
+const afterReject = await call("/api/subscriptions", { cookie: afterLogin.cookie });
+check(
+  "a rejected payment does not activate the plan",
+  afterReject.data.planId === "professional" &&
+    afterReject.data.payments?.find((payment) => payment.id === rejectedInvoice.data.payment.id)?.status === "rejected",
+  JSON.stringify({ plan: afterReject.data.planId, payments: afterReject.data.payments?.slice(0, 2) })
+);
+
 const selfSuspend = await call(`/api/admin/users/${operatorLogin.data.user.id}`, {
   method: "PATCH",
   cookie: operator,
@@ -377,5 +487,6 @@ const allAssistants = await call("/api/admin/assistants", { cookie: operator });
 check("all assistants listed", allAssistants.data.assistants?.length === 2, JSON.stringify(allAssistants.data.assistants?.length));
 
 ai.close();
+paystack.close();
 console.log(failures === 0 ? "\nALL FEATURE CHECKS PASSED" : `\n${failures} FEATURE CHECKS FAILED`);
 process.exit(failures === 0 ? 0 : 1);

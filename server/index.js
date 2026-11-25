@@ -265,6 +265,7 @@ async function connectDatabase(attempt = 1) {
   try {
     console.log(`[db] connection attempt ${attempt}: connecting to ${env.databaseUrl ? 'Postgres (DATABASE_URL set)' : 'PGlite (no DATABASE_URL)'}...`);
     const db = await getImplementation();
+    console.log('[db] getImplementation succeeded, db.query exists:', typeof db.query);
     const here = path.dirname(new URL(import.meta.url).pathname);
     const sqlPath = path.resolve(here, "schema.sql");
     const sql = fs.readFileSync(sqlPath, "utf8");

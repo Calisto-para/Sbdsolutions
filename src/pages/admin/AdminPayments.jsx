@@ -124,6 +124,8 @@ export default function AdminPayments() {
                   <th>Reference</th>
                   <th>Submitted</th>
                   <th>Status</th>
+                  <th>Tokens</th>
+                  <th>Underlying cost</th>
                   <th />
                 </tr>
               </thead>
@@ -151,6 +153,7 @@ export default function AdminPayments() {
                       {payment.rejectedReason ? <span>{payment.rejectedReason}</span> : null}
                     </td>
                     <td>{payment.tokenLimit ? `${payment.tokenLimit.toLocaleString("en-GB")} tokens` : "—"}</td>
+                    <td>{payment.underlyingCost ? `${payment.underlyingCost.toFixed(2)} (hidden)` : "—"}</td>
                     <td>
                       {payment.status === "pending" ? (
                         <div className="panel-actions">

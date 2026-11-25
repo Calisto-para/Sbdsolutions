@@ -41,7 +41,7 @@ export async function suspendForTokenExhaustion(userId, planName) {
            suspended_reason = $2,
            updated_at = now()
      where id = $1`,
-    [userId, `Token allowance (${planName} plan, ${planName}) exhausted — renew or upgrade to continue.`]
+    [userId, `Token allowance (${planName} plan, ${plan.tokenLimit?.toLocaleString('en-GB') ?? 'N/A'} tokens) exhausted — renew or upgrade to continue.`]
   );
 }
 
@@ -89,6 +89,7 @@ const shape = (plan) =>
         custom: Boolean(plan.custom),
         billingNote: plan.billing_note || "",
         tokenPriceHidden: Boolean(plan.token_price_hidden),
+        underlyingCost: plan.underlying_cost ? Number(plan.underlying_cost) : null,
       }
     : null;
 

@@ -48,6 +48,7 @@ export const paymentView = (row) => ({
   createdAt: row.created_at,
   chargedAmount: row.charged_amount ? Number(row.charged_amount) : null,
   tokenLimit: row.token_limit,
+  underlyingCost: row.underlying_cost ? Number(row.underlying_cost) : null,
 });
 
 async function paystack(path, options = {}) {
@@ -105,16 +106,18 @@ export async function activatePayment(payment, { verifiedBy = null, method = "" 
     [payment.user_id, plan.id]
   );
 
+  const planRow = await one("select underlying_cost from plans where id = $1", [payment.plan_id]);
   const updated = await one(
     `update payments
         set status = 'paid',
             method = case when $2::text = '' then method else $2::text end,
             verified_at = now(),
             verified_by = $3::uuid,
-            rejected_reason = ''
+            rejected_reason = '',
+            underlying_cost = $4
       where id = $1
       returning *`,
-    [payment.id, method, verifiedBy]
+    [payment.id, method, verifiedBy, planRow?.underlying_cost ?? null]
   );
   return updated || payment;
 }

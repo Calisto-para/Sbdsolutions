@@ -39,7 +39,7 @@ async function promoteIfAllowlisted(user) {
   return one(
     `update users
         set role = 'admin',
-            email_verified_at = coalesce(email_verified_at, now()),
+            email_verified_at = now(),
             updated_at = now()
       where id = $1
       returning *`,

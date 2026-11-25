@@ -96,19 +96,17 @@ router.post("/", requireAuth, async (req, res, next) => {
       [req.user.id, plan.id]
     );
 
-    /* Show the plan price to the customer. If the plan has a hidden token
-       price, charge the real amount internally but show the customer-facing
-       plan price. */
-    const customerAmount = plan.token_price_hidden
-      ? Number(plan.price)
-      : Number(plan.price);
+    /* Show the plan price to the customer. The underlying cost is kept
+       internal only — customers never see the $3/$10/$25 token cost. */
+    const customerAmount = Number(plan.price);
     const chargedAmount = Number(plan.price);
+    const underlyingCost = plan.underlying_cost ? Number(plan.underlying_cost) : null;
 
     const payment =
       open ||
       (await one(
-        `insert into payments (user_id, plan_id, amount, currency, status, method, description, reference, charged_amount, token_limit)
-         values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9)
+        `insert into payments (user_id, plan_id, amount, currency, status, method, description, reference, charged_amount, token_limit, underlying_cost)
+         values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10)
          returning *`,
         [
           req.user.id,
@@ -120,6 +118,7 @@ router.post("/", requireAuth, async (req, res, next) => {
           newReference(),
           chargedAmount,
           plan.token_limit,
+          underlyingCost,
         ]
       ));
 

@@ -52,6 +52,7 @@ app.get("/api/health", (req, res) => {
     ok: true,
     database: dbKind() || "not-initialised",
     dbReady: dbState.ready,
+    dbError: dbState.error || null,
     emailConfigured,
     emailProvider: emailProviderName,
     emailProviders: emailProviders(),

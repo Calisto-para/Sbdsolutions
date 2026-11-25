@@ -91,6 +91,20 @@ Copy `.env.example` to `.env`:
 | `EMAIL_PROVIDER` | `brevo` (default), `resend` or `smtp` — which provider is tried first |
 | `MAIL_FROM`, `MAIL_REPLY_TO` | sender identity and reply-to for verification and reset email |
 | `SMTP_HOST/PORT/USER/PASS` | optional SMTP fallback, used only when no API key is set |
+| `ADMIN_EMAILS` | comma-separated accounts allowed into the unlisted operator area at `/admin` |
+
+### Operator area
+
+The operations dashboard lives at `/admin`. It is not linked from the website or
+from the customer dashboard, is served with `noindex`, and its API (`/api/admin`)
+answers 404 to anything that is not an admin session — signed-in clients only see
+the normal "page does not exist" screen.
+
+Access is granted by listing the account in `ADMIN_EMAILS`; those addresses are
+promoted on boot and again on each sign-in. An existing admin can also promote or
+demote another account from the Customers tab. The area shows account totals,
+newest signups, a searchable customer list with each customer's assistants and
+conversations, and every conversation started on the platform.
 
 ### Email delivery
 

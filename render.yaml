@@ -15,6 +15,8 @@ services:
         value: https://sbdaisolutions.onrender.com
       - key: DATABASE_URL
         sync: false
+      - key: ADMIN_EMAILS
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL

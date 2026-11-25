@@ -11,6 +11,11 @@ export const env = {
   pgliteDir: process.env.PGLITE_DIR || ".data/pglite",
   sessionSecret: process.env.SESSION_SECRET || "dev-only-insecure-session-secret",
   cookieSecure: bool(process.env.COOKIE_SECURE),
+  /* Comma-separated addresses that are promoted to the operator role on boot and sign-in. */
+  adminEmails: (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
   openai: {
     apiKey: process.env.OPENAI_API_KEY || "",
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",

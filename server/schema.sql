@@ -73,6 +73,9 @@ create table if not exists messages (
   created_at timestamptz not null default now()
 );
 
+/* Operators get a role; every account created before this column existed is a client. */
+alter table users add column if not exists role text not null default 'client';
+
 create index if not exists users_email_lower_idx on users (lower(email));
 create index if not exists assistants_user_idx on assistants (user_id, created_at desc);
 create index if not exists knowledge_assistant_idx on knowledge_items (assistant_id, created_at desc);

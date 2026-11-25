@@ -59,6 +59,7 @@ export const publicUser = (row) => ({
   phone: row.phone,
   country: row.country,
   emailVerified: Boolean(row.email_verified_at),
+  role: row.role === "admin" ? "admin" : "client",
   preferences: row.preferences || {},
   createdAt: row.created_at,
 });
@@ -72,6 +73,19 @@ export async function requireAuth(req, res, next) {
     clearSessionCookie(res);
     return res.status(401).json({ error: "Please sign in to continue." });
   }
+
+  req.user = user;
+  next();
+}
+
+/* Operator endpoints answer "not found" to everyone else so the area does not
+   advertise itself to signed-in clients. */
+export async function requireAdmin(req, res, next) {
+  const session = readSession(req);
+  if (!session?.sub) return res.status(404).json({ error: "Not found." });
+
+  const user = await one("select * from users where id = $1", [session.sub]);
+  if (!user || user.role !== "admin") return res.status(404).json({ error: "Not found." });
 
   req.user = user;
   next();

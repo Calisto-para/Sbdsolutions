@@ -29,6 +29,14 @@ const password = z
 
 const devLink = (link) => (!emailConfigured && !env.isProd ? { previewUrl: link } : {});
 
+/* Operator allowlist: the account becomes an admin as soon as it is created or
+   signs in, even if it appeared after the last boot. */
+async function promoteIfAllowlisted(user) {
+  if (!user || user.role === "admin") return user;
+  if (!env.adminEmails.includes(String(user.email).toLowerCase())) return user;
+  return one("update users set role = 'admin', updated_at = now() where id = $1 returning *", [user.id]);
+}
+
 async function issueVerification(user) {
   const token = randomToken();
   await query(
@@ -86,6 +94,7 @@ router.post("/register", async (req, res, next) => {
       );
     }
 
+    await promoteIfAllowlisted(user);
     const verification = await issueVerification(user);
 
     res.status(201).json({
@@ -119,8 +128,9 @@ router.post("/verify-email", async (req, res, next) => {
       [user.id]
     );
 
-    setSessionCookie(res, user.id);
-    res.json({ ok: true, message: "Email verified. Your account is ready.", user: publicUser({ ...user, email_verified_at: new Date() }) });
+    const promoted = await promoteIfAllowlisted(user);
+    setSessionCookie(res, promoted.id);
+    res.json({ ok: true, message: "Email verified. Your account is ready.", user: publicUser({ ...promoted, email_verified_at: new Date() }) });
   } catch (error) {
     next(error);
   }
@@ -150,7 +160,7 @@ router.post("/login", async (req, res, next) => {
       .object({ email, password: z.string().min(1, "Enter your password.").max(200) })
       .parse(req.body);
 
-    const user = await one("select * from users where lower(email) = $1", [body.email]);
+    let user = await one("select * from users where lower(email) = $1", [body.email]);
     if (!user || !(await checkPassword(body.password, user.password_hash))) {
       return res.status(401).json({ error: "Email or password is incorrect." });
     }
@@ -160,6 +170,8 @@ router.post("/login", async (req, res, next) => {
         code: "EMAIL_UNVERIFIED",
       });
     }
+
+    user = await promoteIfAllowlisted(user);
 
     setSessionCookie(res, user.id);
     res.json({ ok: true, user: publicUser(user) });

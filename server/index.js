@@ -14,6 +14,7 @@ import businessRoutes from "./routes/business.js";
 import assistantRoutes from "./routes/assistants.js";
 import conversationRoutes from "./routes/conversations.js";
 import overviewRoutes from "./routes/overview.js";
+import adminRoutes from "./routes/admin.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -59,6 +60,7 @@ app.use("/api/business", businessRoutes);
 app.use("/api/assistants", assistantRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/overview", overviewRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "Endpoint not found." });
@@ -75,6 +77,12 @@ const WEB_ROOT = hasBuild ? DIST : path.resolve(".");
 if (!hasBuild) {
   console.warn("[web] dist/ is missing — the build step did not run. Serving the prerendered pages committed at the repo root.");
 }
+
+/* The operator area is unlisted: keep it out of search engines. */
+app.use("/admin", (req, res, next) => {
+  res.set("X-Robots-Tag", "noindex, nofollow");
+  next();
+});
 
 if (fs.existsSync(WEB_ROOT)) {
   app.use(express.static(WEB_ROOT, { extensions: ["html"], maxAge: env.isProd ? "1h" : 0 }));

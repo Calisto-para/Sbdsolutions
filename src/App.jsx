@@ -16,6 +16,7 @@ import ForgotPassword from "./pages/auth/ForgotPassword";
 import ResetPassword from "./pages/auth/ResetPassword";
 import VerifyEmail from "./pages/auth/VerifyEmail";
 import Dashboard from "./pages/dashboard/Dashboard";
+import Admin from "./pages/admin/Admin";
 
 /* Old .html addresses still resolve, in-app, to the clean routes. */
 const LEGACY = {
@@ -50,6 +51,9 @@ export default function App() {
         <Route path="reset-password" element={<ResetPassword />} />
         <Route path="verify-email" element={<VerifyEmail />} />
         <Route path="dashboard" element={<Dashboard />} />
+
+        {/* Unlisted operator area: no page links to it. */}
+        <Route path="admin" element={<Admin />} />
 
         <Route element={<Layout />}>
           <Route index element={<Home />} />

@@ -46,6 +46,8 @@ export const paymentView = (row) => ({
   rejectedReason: row.rejected_reason || "",
   verifiedAt: row.verified_at,
   createdAt: row.created_at,
+  chargedAmount: row.charged_amount ? Number(row.charged_amount) : null,
+  tokenLimit: row.token_limit,
 });
 
 async function paystack(path, options = {}) {
@@ -97,7 +99,8 @@ export async function activatePayment(payment, { verifiedBy = null, method = "" 
   await query(
     `update subscriptions
         set plan_id = $2, status = 'active', cancel_at_period_end = false,
-            current_period_end = now() + interval '30 days', updated_at = now()
+            current_period_end = now() + interval '30 days',
+            tokens_used = 0, updated_at = now()
       where user_id = $1`,
     [payment.user_id, plan.id]
   );

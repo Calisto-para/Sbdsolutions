@@ -4,7 +4,7 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete } from "../ai.js";
-import { assistantAllowanceError } from "../plans.js";
+import { assistantAllowanceError, checkTokenLimit, addTokenUsage } from "../plans.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -239,6 +239,10 @@ router.post("/:id/knowledge/:itemId/ask", requireAuth, async (req, res, next) =>
     const assistant = await ownedAssistant(req.user.id, req.params.id);
     if (!assistant) return res.status(404).json({ error: "Assistant not found." });
 
+    /* Check token allowance before processing the question. */
+    const tokenError = await checkTokenLimit(req.user.id);
+    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
+
     const item = await one(
       "select * from knowledge_items where id = $1 and assistant_id = $2 and user_id = $3",
       [req.params.itemId, assistant.id, req.user.id]
@@ -260,7 +264,27 @@ router.post("/:id/knowledge/:itemId/ask", requireAuth, async (req, res, next) =>
     ].join("\n");
 
     const answer = await complete({ system, messages: [{ role: "user", content: question }] });
-    res.json({ answer });
+
+    /* Token cost: each document question costs 3 tokens. */
+    const tokenCost = 3;
+    await addTokenUsage(req.user.id, tokenCost);
+
+    /* Check after adding — if the user just exhausted their allowance,
+       suspend them. */
+    const afterError = await checkTokenLimit(req.user.id);
+    if (afterError) {
+      const { plan } = await currentPlan(req.user.id);
+      await query(
+        `update users
+           set suspended_at = now(),
+               suspended_reason = $2,
+               updated_at = now()
+         where id = $1`,
+        [req.user.id, `Token allowance (${plan?.name || "your"} plan) exhausted — renew or upgrade to continue.`]
+      );
+    }
+
+    res.json({ answer, tokensUsed: tokenCost });
   } catch (error) {
     next(error);
   }
@@ -299,6 +323,10 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
     if (req.file.mimetype !== "application/pdf" && !/\.pdf$/i.test(req.file.originalname || "")) {
       return res.status(400).json({ error: "Only PDF documents can be uploaded." });
     }
+
+    /* Check token allowance before processing the PDF. */
+    const tokenError = await checkTokenLimit(req.user.id);
+    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
 
     let text = "";
     try {
@@ -347,6 +375,10 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
       });
     }
 
+    /* Token cost: each uploaded PDF costs 10 tokens to store and index. */
+    const tokenCost = 10;
+    await addTokenUsage(req.user.id, tokenCost);
+
     const row = await one(
       `insert into knowledge_items (user_id, assistant_id, kind, title, content, source_name)
        values ($1, $2, 'document', $3, $4, $5) returning *`,
@@ -362,6 +394,7 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
     res.status(201).json({
       item: knowledgeApi(row),
       characters: visibleCharacters,
+      tokensUsed: tokenCost,
       message: `${req.file.originalname || "PDF"} added — ${visibleCharacters.toLocaleString("en-GB")} characters of text learned.`,
     });
   } catch (error) {
@@ -446,6 +479,10 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
     const assistant = await ownedAssistant(req.user.id, req.params.id);
     if (!assistant) return res.status(404).json({ error: "Assistant not found." });
 
+    /* Check token allowance before processing the chat. */
+    const tokenError = await checkTokenLimit(req.user.id);
+    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
+
     const body = z
       .object({
         message: z.string().trim().min(1, "Type a message first.").max(2000),
@@ -483,6 +520,25 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
 
     const reply = await complete({ system, messages });
 
+    /* Token cost: each message pair (user + assistant) costs 5 tokens. */
+    const tokenCost = 5;
+    await addTokenUsage(req.user.id, tokenCost);
+
+    /* Check after adding — if the user just exhausted their allowance,
+       suspend them. */
+    const afterError = await checkTokenLimit(req.user.id);
+    if (afterError) {
+      const { plan } = await currentPlan(req.user.id);
+      await query(
+        `update users
+           set suspended_at = now(),
+               suspended_reason = $2,
+               updated_at = now()
+         where id = $1`,
+        [req.user.id, `Token allowance (${plan?.name || "your"} plan) exhausted — renew or upgrade to continue.`]
+      );
+    }
+
     if (!conversation) {
       conversation = await one(
         `insert into conversations (user_id, assistant_id, title)
@@ -501,7 +557,7 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
     ]);
     await query("update conversations set updated_at = now() where id = $1", [conversation.id]);
 
-    res.json({ conversationId: conversation.id, reply });
+    res.json({ conversationId: conversation.id, reply, tokensUsed: tokenCost });
   } catch (error) {
     next(error);
   }

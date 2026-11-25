@@ -150,6 +150,7 @@ export default function AdminPayments() {
                       </span>
                       {payment.rejectedReason ? <span>{payment.rejectedReason}</span> : null}
                     </td>
+                    <td>{payment.tokenLimit ? `${payment.tokenLimit.toLocaleString("en-GB")} tokens` : "—"}</td>
                     <td>
                       {payment.status === "pending" ? (
                         <div className="panel-actions">

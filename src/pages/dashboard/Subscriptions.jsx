@@ -163,6 +163,13 @@ export default function Subscriptions() {
           </div>
           <div className="usage-item">
             <div className="usage-head">
+              <span>AI tokens this month</span>
+              <strong>{data.usage.tokensUsed} / {data.usage.tokenLimit?.toLocaleString("en-GB") || "∞"}</strong>
+            </div>
+            <div className="usage-bar"><span style={{ width: `${data.usage.tokenLimit ? Math.min(100, Math.round((data.usage.tokensUsed / Math.max(1, data.usage.tokenLimit)) * 100)) : 0}%` }} /></div>
+          </div>
+          <div className="usage-item">
+            <div className="usage-head">
               <span>Conversations this month</span>
               <strong>{data.usage.conversations}</strong>
             </div>
@@ -287,6 +294,9 @@ export default function Subscriptions() {
                     <li key={feature}>{feature}</li>
                   ))}
                 </ul>
+                {plan.tokenLimit > 0 && !plan.tokenPriceHidden ? (
+                  <p className="panel-note">{plan.tokenLimit.toLocaleString("en-GB")} AI tokens included each month</p>
+                ) : null}
                 {plan.custom && !current ? (
                   <a className="btn btn--ghost btn--sm" href={WHATSAPP} target="_blank" rel="noreferrer">
                     Talk to us

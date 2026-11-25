@@ -128,6 +128,7 @@ create table if not exists plans (
   currency text not null default 'USD',
   assistant_limit integer not null default 1,
   message_limit integer not null default 200,
+  token_limit integer not null default 0,
   features jsonb not null default '[]'::jsonb,
   sort_order integer not null default 0
 );
@@ -135,21 +136,24 @@ create table if not exists plans (
    them here is enough — existing subscribers move to the new price/limits. */
 alter table plans add column if not exists custom boolean not null default false;
 alter table plans add column if not exists billing_note text not null default '';
-insert into plans (id, name, price, currency, assistant_limit, message_limit, features, sort_order, custom, billing_note) values
-  ('starter', 'Starter', 100, 'USD', 1, 200, '["1 AI assistant", "200 visitor messages a month", "Website chatbot", "Lead collection"]'::jsonb, 1, false, 'Billed monthly'),
-  ('professional', 'Professional', 200, 'USD', 3, 2000, '["3 AI assistants", "2,000 visitor messages a month", "Website chatbot", "Lead collection", "Priority support"]'::jsonb, 2, false, 'Billed monthly'),
-  ('business', 'Business', 400, 'USD', 10, 10000, '["10 AI assistants", "10,000 visitor messages a month", "Website chatbot", "Lead collection", "Priority support"]'::jsonb, 3, false, 'Billed monthly'),
-  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "Dedicated support"]'::jsonb, 4, true, 'Monthly or agreed billing')
+alter table plans add column if not exists token_price_hidden boolean not null default false;
+insert into plans (id, name, price, currency, assistant_limit, message_limit, token_limit, features, sort_order, custom, billing_note, token_price_hidden) values
+  ('starter', 'Starter', 15, 'USD', 1, 200, 3000, '["1 AI assistant", "200 visitor messages a month", "Website chatbot", "Lead collection", "3,000 AI tokens a month"]'::jsonb, 1, false, 'Billed monthly', true),
+  ('professional', 'Professional', 35, 'USD', 3, 2000, 10000, '["3 AI assistants", "2,000 visitor messages a month", "Website chatbot", "Lead collection", "10,000 AI tokens a month", "Priority support"]'::jsonb, 2, false, 'Billed monthly', true),
+  ('business', 'Business', 65, 'USD', 10, 10000, 25000, '["10 AI assistants", "10,000 visitor messages a month", "Website chatbot", "Lead collection", "25,000 AI tokens a month", "Priority support"]'::jsonb, 3, false, 'Billed monthly', true),
+  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, 0, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "Dedicated support"]'::jsonb, 4, true, 'Monthly or agreed billing', false)
 on conflict (id) do update
   set name = excluded.name,
       price = excluded.price,
       currency = excluded.currency,
       assistant_limit = excluded.assistant_limit,
       message_limit = excluded.message_limit,
+      token_limit = excluded.token_limit,
       features = excluded.features,
       sort_order = excluded.sort_order,
       custom = false,
-      billing_note = excluded.billing_note;
+      billing_note = excluded.billing_note,
+      token_price_hidden = excluded.token_price_hidden;
 
 create table if not exists subscriptions (
   user_id uuid primary key references users(id) on delete cascade,
@@ -158,8 +162,10 @@ create table if not exists subscriptions (
   cancel_at_period_end boolean not null default false,
   started_at timestamptz not null default now(),
   current_period_end timestamptz not null default now() + interval '30 days',
+  tokens_used integer not null default 0,
   updated_at timestamptz not null default now()
 );
+alter table subscriptions add column if not exists tokens_used integer not null default 0;
 
 /* Retire the old plan ids without stranding anyone who was subscribed to them.
    Runs after subscriptions exists, so a fresh database starts cleanly. */
@@ -183,6 +189,8 @@ create table if not exists payments (
   rejected_reason text not null default '',
   created_at timestamptz not null default now()
 );
+alter table payments add column if not exists charged_amount numeric(10, 2);
+alter table payments add column if not exists token_limit integer;
 create unique index if not exists payments_reference_idx on payments (reference) where reference is not null;
 create index if not exists payments_user_idx on payments (user_id, created_at desc);
 create index if not exists payments_status_idx on payments (status, created_at desc);

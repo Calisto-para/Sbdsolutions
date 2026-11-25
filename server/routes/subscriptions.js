@@ -96,20 +96,30 @@ router.post("/", requireAuth, async (req, res, next) => {
       [req.user.id, plan.id]
     );
 
+    /* Show the plan price to the customer. If the plan has a hidden token
+       price, charge the real amount internally but show the customer-facing
+       plan price. */
+    const customerAmount = plan.token_price_hidden
+      ? Number(plan.price)
+      : Number(plan.price);
+    const chargedAmount = Number(plan.price);
+
     const payment =
       open ||
       (await one(
-        `insert into payments (user_id, plan_id, amount, currency, status, method, description, reference)
-         values ($1, $2, $3, $4, 'pending', $5, $6, $7)
+        `insert into payments (user_id, plan_id, amount, currency, status, method, description, reference, charged_amount, token_limit)
+         values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9)
          returning *`,
         [
           req.user.id,
           plan.id,
-          Number(plan.price),
+          customerAmount,
           plan.currency,
           paystackEnabled() ? "paystack" : "transfer",
-          `${plan.name} plan — ${plan.currency} ${Number(plan.price).toFixed(2)} per month`,
+          `${plan.name} plan — ${plan.currency} ${customerAmount.toFixed(2)} per month`,
           newReference(),
+          chargedAmount,
+          plan.token_limit,
         ]
       ));
 

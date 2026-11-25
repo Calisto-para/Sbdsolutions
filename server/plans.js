@@ -1,8 +1,49 @@
-import { one } from "./db.js";
+import { query, one } from "./db.js";
 
 /* Every account sits on a plan. The row is created on first use so older
    accounts keep working without a migration step of their own. */
 export const DEFAULT_PLAN = "starter";
+
+/* Token usage tracking. Each plan has a monthly token allowance; when the
+   customer runs out the account is suspended until the period renews or they
+   upgrade. The real per-token price is never shown to customers. */
+export async function addTokenUsage(userId, tokens) {
+  await query(
+    `update subscriptions
+       set tokens_used = greatest(0, tokens_used + $2), updated_at = now()
+     where user_id = $1`,
+    [userId, tokens]
+  );
+}
+
+export async function resetTokenUsage(userId) {
+  await query(
+    `update subscriptions set tokens_used = 0, updated_at = now() where user_id = $1`,
+    [userId]
+  );
+}
+
+export async function checkTokenLimit(userId) {
+  const { plan } = await currentPlan(userId);
+  const sub = await one("select * from subscriptions where user_id = $1", [userId]);
+  if (!plan || !sub) return "";
+  if (plan.token_limit <= 0) return ""; /* enterprise: no token limit */
+  if (sub.tokens_used >= plan.token_limit) {
+    return `Your ${plan.token_limit.toLocaleString("en-GB")}-token monthly allowance on the ${plan.name} plan is used up. Renew or upgrade to keep using AI features.`;
+  }
+  return "";
+}
+
+export async function suspendForTokenExhaustion(userId, planName) {
+  await query(
+    `update users
+       set suspended_at = now(),
+           suspended_reason = $2,
+           updated_at = now()
+     where id = $1`,
+    [userId, `Token allowance (${planName} plan, ${planName}) exhausted — renew or upgrade to continue.`]
+  );
+}
 
 export async function currentPlan(userId) {
   const row = await one(
@@ -43,9 +84,11 @@ const shape = (plan) =>
         currency: plan.currency,
         assistantLimit: plan.assistant_limit,
         messageLimit: plan.message_limit,
+        tokenLimit: plan.token_limit ?? 0,
         features: Array.isArray(plan.features) ? plan.features : [],
         custom: Boolean(plan.custom),
         billingNote: plan.billing_note || "",
+        tokenPriceHidden: Boolean(plan.token_price_hidden),
       }
     : null;
 
@@ -70,6 +113,8 @@ export async function subscriptionSummary(userId) {
       leads: usage.leads,
       assistantLimit: plan?.assistant_limit ?? 1,
       messageLimit: plan?.message_limit ?? 200,
+      tokensUsed: subscription.tokens_used ?? 0,
+      tokenLimit: plan?.token_limit ?? 0,
     },
   };
 }

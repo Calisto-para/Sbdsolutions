@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
 import { emailProviderName } from "./mail.js";
+import { senderWarning } from "./mail-check.js";
 import { migrate } from "./migrate.js";
 import { dbKind, dbState } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -128,6 +129,8 @@ const server = app.listen(port, "0.0.0.0", () => {
         : "not configured — verification links are logged and shown on screen"
     }`
   );
+  const mailWarning = emailProviderName === "resend" ? senderWarning() : "";
+  if (mailWarning) console.error(`[mail] ${mailWarning}`);
   console.log(`[server] AI: ${aiConfigured ? `OpenAI ${env.openai.model}` : "not configured — add OPENAI_API_KEY"}`);
   if (env.isProd && !dbConfigured) {
     console.error("[db] DATABASE_URL is not set in production — data will be lost on every deploy.");

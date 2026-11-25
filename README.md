@@ -122,6 +122,22 @@ provider configured, links are logged and shown on screen in development.
 Brevo verifies the sender address in its dashboard, Resend needs a verified
 domain for anything other than `onboarding@resend.dev`.
 
+### Why verification email does not arrive
+
+The provider accepts the request and then rejects the message; the API now
+returns `emailDelivered: false` with `code: "EMAIL_NOT_SENT"` so the page can
+say so instead of telling the customer to check an inbox.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `403 ... domain is not verified` from Resend | Resend only sends from a domain you verified. A free mailbox such as `@gmail.com` can never be verified | Verify a domain at resend.com/domains and set `MAIL_FROM` to it, or switch to Brevo |
+| Brevo `401/400 sender not valid` | The sender address is not verified in Brevo | Brevo → Senders & IP → Senders → add and confirm the address |
+| Email arrives only for the account owner | Sending from `onboarding@resend.dev` | Fine for testing, but customers need your own verified domain |
+
+Sends through a free mailbox (Gmail, Yahoo, Outlook…) with Resend are logged as
+an error at boot, and the operator dashboard's **Email delivery** card checks the
+provider live and can send a test message to the operator's own address.
+
 ## Build and hosting
 
 `npm run build` builds the React app, writes the single-page shell plus one

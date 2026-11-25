@@ -99,9 +99,13 @@ router.post("/register", async (req, res, next) => {
 
     res.status(201).json({
       ok: true,
-      message: emailConfigured
+      emailDelivered: verification.delivered,
+      ...(verification.delivered ? {} : { code: emailConfigured ? "EMAIL_NOT_SENT" : "EMAIL_NOT_CONFIGURED" }),
+      message: verification.delivered
         ? "Account created. Check your inbox for the verification link."
-        : "Account created. Email delivery is not configured yet, so the verification link is shown below.",
+        : emailConfigured
+          ? "Your account was created, but our email provider rejected the verification message, so it did not send. Message us on WhatsApp (+234 906 392 4288) and we will verify your account."
+          : "Account created. Email delivery is not configured yet, so the verification link is shown below.",
       ...devLink(verification.link),
     });
   } catch (error) {
@@ -144,7 +148,13 @@ router.post("/resend-verification", async (req, res, next) => {
       const verification = await issueVerification(user);
       return res.json({
         ok: true,
-        message: emailConfigured ? "A new verification link is on its way." : "Email delivery is not configured yet, so the link is shown below.",
+        emailDelivered: verification.delivered,
+        ...(verification.delivered ? {} : { code: emailConfigured ? "EMAIL_NOT_SENT" : "EMAIL_NOT_CONFIGURED" }),
+        message: verification.delivered
+          ? "A new verification link is on its way."
+          : emailConfigured
+            ? "We could not send the verification message: our email provider rejected it. Message us on WhatsApp (+234 906 392 4288) and we will verify your account."
+            : "Email delivery is not configured yet, so the link is shown below.",
         ...devLink(verification.link),
       });
     }
@@ -285,9 +295,13 @@ router.post("/forgot-password", async (req, res, next) => {
       const result = await sendPasswordResetEmail(user, link);
       return res.json({
         ok: true,
-        message: emailConfigured
+        emailDelivered: result.delivered,
+        ...(result.delivered ? {} : { code: emailConfigured ? "EMAIL_NOT_SENT" : "EMAIL_NOT_CONFIGURED" }),
+        message: result.delivered
           ? "If that email is registered, a reset link is on its way."
-          : "Email delivery is not configured yet, so the reset link is shown below.",
+          : emailConfigured
+            ? "The reset message could not be sent because our email provider rejected it. Message us on WhatsApp (+234 906 392 4288) and we will help you back in."
+            : "Email delivery is not configured yet, so the reset link is shown below.",
         ...devLink(result.previewUrl || link),
       });
     }

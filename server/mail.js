@@ -125,7 +125,15 @@ async function send({ to, subject, text, html, link }) {
   }
 
   console.error(`[mail] every provider failed for ${to} — ${failures.join(" | ")}`);
-  return { delivered: false, previewUrl: link };
+  return { delivered: false, previewUrl: link, failures };
+}
+
+/* Used by the operator dashboard to prove the sending account works. */
+export async function sendTestEmail(to) {
+  const subject = "SBD AI Solutions test email";
+  const text = "This is a test message from the SBD AI Solutions platform. If you can read it, verification and password-reset email will reach customers too.";
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#0b1220"><h2 style="color:#0b1f3f">Test email</h2><p>${text}</p></div>`;
+  return send({ to, subject, text, html, link: "" });
 }
 
 export function sendVerificationEmail(user, link) {

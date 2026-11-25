@@ -2,6 +2,8 @@ import express from "express";
 import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAdmin, publicUser } from "../auth.js";
+import { mailDiagnostics } from "../mail-check.js";
+import { sendTestEmail } from "../mail.js";
 
 /* Operator area. Every route is admin-only and answers 404 to anyone else, so
    the area is invisible to clients. */
@@ -197,6 +199,31 @@ router.patch("/users/:id", async (req, res, next) => {
     if (!updated) return res.status(404).json({ error: "Not found." });
 
     res.json({ ok: true, user: publicUser(updated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Is the configured sender actually accepted by the provider? */
+router.get("/email", async (req, res, next) => {
+  try {
+    res.json(await mailDiagnostics());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/email-test", async (req, res, next) => {
+  try {
+    const result = await sendTestEmail(req.user.email);
+    res.json({
+      delivered: result.delivered,
+      provider: result.provider || "",
+      failures: result.failures || [],
+      message: result.delivered
+        ? `Test email sent to ${req.user.email} through ${result.provider}.`
+        : "The email provider rejected the test message — see the provider response below.",
+    });
   } catch (error) {
     next(error);
   }

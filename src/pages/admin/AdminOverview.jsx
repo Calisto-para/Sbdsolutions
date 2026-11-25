@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import AdminEmail from "./AdminEmail";
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -38,6 +39,8 @@ export default function AdminOverview() {
           </div>
         ))}
       </div>
+
+      <AdminEmail />
 
       <div className="dash-columns">
         <section className="panel">

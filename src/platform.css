@@ -1537,3 +1537,52 @@
     flex: 1;
   }
 }
+
+.admin-email {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-mail-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+.admin-mail-state.is-ok {
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+
+.admin-mail-state.is-bad {
+  background: #fef3f2;
+  border-color: #fecdc9;
+}
+
+.admin-mail-state.is-ok .admin-pill {
+  background: #d1fadf;
+  color: #05603a;
+}
+
+.admin-mail-state.is-bad .admin-pill {
+  background: #fee4e2;
+  color: #912018;
+}
+
+.admin-mail-state strong {
+  font-size: 0.9rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.admin-mail-failures {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  word-break: break-word;
+}

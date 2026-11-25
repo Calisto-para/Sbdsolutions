@@ -12,6 +12,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [unverified, setUnverified] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeFailed, setNoticeFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const update = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
@@ -37,6 +38,7 @@ export default function Login() {
     try {
       const data = await api("/auth/resend-verification", { method: "POST", body: { email: form.email } });
       setNotice(data.message);
+      setNoticeFailed(data.emailDelivered === false);
       setError("");
     } catch (err) {
       setError(err.message);
@@ -54,7 +56,11 @@ export default function Login() {
       }
     >
       {error ? <div className="form-alert form-alert--error" role="alert">{error}</div> : null}
-      {notice ? <div className="form-alert form-alert--info" role="status">{notice}</div> : null}
+      {notice ? (
+        <div className={`form-alert ${noticeFailed ? "form-alert--error" : "form-alert--info"}`} role="status">
+          {notice}
+        </div>
+      ) : null}
 
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
         <Field label="Email address" htmlFor="loginEmail">

@@ -8,6 +8,7 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
+  const [delivered, setDelivered] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -17,11 +18,13 @@ export default function ForgotPassword() {
     setError("");
     setMessage("");
     setPreviewUrl("");
+    setDelivered(true);
 
     try {
       const data = await api("/auth/forgot-password", { method: "POST", body: { email } });
       setMessage(data.message);
       setPreviewUrl(data.previewUrl || "");
+      setDelivered(data.emailDelivered !== false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -41,7 +44,7 @@ export default function ForgotPassword() {
     >
       {error ? <div className="form-alert form-alert--error" role="alert">{error}</div> : null}
       {message ? (
-        <div className={`form-alert ${previewUrl ? "form-alert--info" : "form-alert--ok"}`} role="status">
+        <div className={`form-alert ${!delivered ? "form-alert--error" : previewUrl ? "form-alert--info" : "form-alert--ok"}`} role="status">
           <p>{message}</p>
           {previewUrl ? <a className="form-alert-link" href={previewUrl}>Open the reset link</a> : null}
         </div>

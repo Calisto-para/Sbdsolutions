@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
 import { emailProviderName, emailProviders } from "./mail.js";
-import { senderWarning } from "./mail-check.js";
+import { senderWarning, emailHealthSnapshot } from "./mail-check.js";
 import { migrate } from "./migrate.js";
 import { dbKind, dbState } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -35,7 +35,10 @@ const authLimiter = rateLimit({
 });
 
 app.get("/api/health", (req, res) => {
+  /* Kicks off a background, read-only sender check; never blocks this probe. */
+  const mail = emailHealthSnapshot();
   res.json({
+    ...(mail ? { emailHealth: mail } : {}),
     ok: true,
     database: dbKind() || "not-initialised",
     dbReady: dbState.ready,

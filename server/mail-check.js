@@ -107,6 +107,79 @@ async function smtpCheck() {
   };
 }
 
+/* Background, read-only snapshot of the sending account, safe to publish on the
+   health check: booleans and a short reason, never keys, addresses or bodies.
+   It is never awaited by the health route, so Render's probe stays fast. */
+let snapshot = null;
+let inFlight = null;
+
+const normalise = (message) => {
+  const text = String(message || "");
+  if (/Key not found|Unauthorized|401|403/i.test(text)) return "key_rejected";
+  if (/sender|from address|not valid/i.test(text)) return "sender_not_verified";
+  if (/recipient|to address|invalid email/i.test(text)) return "recipient_rejected";
+  if (/quota|limit/i.test(text)) return "quota_reached";
+  return "provider_error";
+};
+
+async function computeSnapshot() {
+  const provider = emailProviders()[0] || "none";
+  const value = { provider, keyValid: null, senderVerified: null, verifiedSenders: [], reason: "" };
+  try {
+    if (provider === "brevo" && env.mail.brevo.apiKey) {
+      const origin = base(env.mail.brevo.apiUrl, "https://api.brevo.com");
+      try {
+        await getJson(`${origin}/v3/account`, { "api-key": env.mail.brevo.apiKey });
+        value.keyValid = true;
+      } catch (error) {
+        value.keyValid = false;
+        value.reason = normalise(error.message);
+        return value;
+      }
+      const data = await getJson(`${origin}/v3/senders`, { "api-key": env.mail.brevo.apiKey });
+      const senders = Array.isArray(data) ? data : data.senders || [];
+      value.verifiedSenders = senders.filter((sender) => sender.active).map((sender) => sender.email);
+      value.senderVerified = value.verifiedSenders.some(
+        (email) => String(email).toLowerCase() === senderAddress().toLowerCase()
+      );
+      if (!value.senderVerified) value.reason = "sender_not_verified";
+    } else if (provider === "resend" && env.mail.resend.apiKey) {
+      try {
+        const data = await getJson(`${base(env.mail.resend.apiUrl, "https://api.resend.com")}/domains`, {
+          authorization: `Bearer ${env.mail.resend.apiKey}`,
+        });
+        value.keyValid = true;
+        const domains = Array.isArray(data) ? data : data.data || [];
+        value.senderVerified = domains.some(
+          (domain) => domain.status === "verified" && domain.name === senderDomain()
+        );
+        if (!value.senderVerified) value.reason = "sender_not_verified";
+      } catch (error) {
+        value.keyValid = false;
+        value.reason = normalise(error.message);
+      }
+    }
+  } catch (error) {
+    value.reason = "check_failed";
+  }
+  return value;
+}
+
+export function emailHealthSnapshot() {
+  const stale = !snapshot || Date.now() - snapshot.at > 5 * 60 * 1000;
+  if (stale && !inFlight) {
+    inFlight = computeSnapshot()
+      .then((value) => {
+        snapshot = { at: Date.now(), value };
+      })
+      .catch(() => {})
+      .finally(() => {
+        inFlight = null;
+      });
+  }
+  return snapshot ? { ...snapshot.value, checkedAt: new Date(snapshot.at).toISOString() } : null;
+}
+
 /* Live check of the sending account: does the provider actually accept this
    sender address? Used by the operator dashboard, never by the public site. */
 export async function mailDiagnostics() {

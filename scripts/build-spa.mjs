@@ -46,8 +46,11 @@ for (const file of new Set(published)) {
 for (const file of fs.readdirSync(DIST).filter((name) => name.endsWith(".html"))) {
   fs.copyFileSync(path.join(DIST, file), path.join(ROOT, file));
 }
-if (fs.existsSync(path.join(DIST, "sbd-solutions-icon.png"))) {
-  fs.copyFileSync(path.join(DIST, "sbd-solutions-icon.png"), path.join(ROOT, "sbd-solutions-icon.png"));
+/* Root-level files from public/ (icons) need mirroring too. */
+for (const file of ["sbd-solutions-icon.png", "sbd-ai-solutions-icon.png"]) {
+  if (fs.existsSync(path.join(DIST, file))) {
+    fs.copyFileSync(path.join(DIST, file), path.join(ROOT, file));
+  }
 }
 
 console.log(`published SPA shell + ${LEGACY_PAGES.length} legacy aliases to dist/ and the repo root`);

@@ -131,11 +131,25 @@ create table if not exists plans (
   features jsonb not null default '[]'::jsonb,
   sort_order integer not null default 0
 );
-insert into plans (id, name, price, currency, assistant_limit, message_limit, features, sort_order) values
-  ('starter', 'Starter', 0, 'USD', 1, 200, '["1 AI assistant", "200 visitor messages a month", "Website chatbot", "Lead collection"]'::jsonb, 1),
-  ('growth', 'Growth', 29, 'USD', 3, 2000, '["3 AI assistants", "2,000 visitor messages a month", "Lead collection", "Priority support"]'::jsonb, 2),
-  ('scale', 'Scale', 99, 'USD', 10, 10000, '["10 AI assistants", "10,000 visitor messages a month", "Lead collection", "Priority support"]'::jsonb, 3)
-on conflict (id) do nothing;
+/* Prices and names are kept in step with this list on every boot, so changing
+   them here is enough — existing subscribers move to the new price/limits. */
+alter table plans add column if not exists custom boolean not null default false;
+alter table plans add column if not exists billing_note text not null default '';
+insert into plans (id, name, price, currency, assistant_limit, message_limit, features, sort_order, custom, billing_note) values
+  ('starter', 'Starter', 100, 'USD', 1, 200, '["1 AI assistant", "200 visitor messages a month", "Website chatbot", "Lead collection"]'::jsonb, 1, false, 'Billed monthly'),
+  ('professional', 'Professional', 200, 'USD', 3, 2000, '["3 AI assistants", "2,000 visitor messages a month", "Website chatbot", "Lead collection", "Priority support"]'::jsonb, 2, false, 'Billed monthly'),
+  ('business', 'Business', 400, 'USD', 10, 10000, '["10 AI assistants", "10,000 visitor messages a month", "Website chatbot", "Lead collection", "Priority support"]'::jsonb, 3, false, 'Billed monthly'),
+  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "Dedicated support"]'::jsonb, 4, true, 'Monthly or agreed billing')
+on conflict (id) do update
+  set name = excluded.name,
+      price = excluded.price,
+      currency = excluded.currency,
+      assistant_limit = excluded.assistant_limit,
+      message_limit = excluded.message_limit,
+      features = excluded.features,
+      sort_order = excluded.sort_order,
+      custom = excluded.custom,
+      billing_note = excluded.billing_note;
 
 create table if not exists subscriptions (
   user_id uuid primary key references users(id) on delete cascade,
@@ -146,6 +160,12 @@ create table if not exists subscriptions (
   current_period_end timestamptz not null default now() + interval '30 days',
   updated_at timestamptz not null default now()
 );
+
+/* Retire the old plan ids without stranding anyone who was subscribed to them.
+   Runs after subscriptions exists, so a fresh database starts cleanly. */
+update subscriptions set plan_id = 'professional', updated_at = now() where plan_id = 'growth';
+update subscriptions set plan_id = 'business', updated_at = now() where plan_id = 'scale';
+delete from plans where id in ('growth', 'scale');
 
 create table if not exists payments (
   id uuid primary key default gen_random_uuid(),

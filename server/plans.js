@@ -44,6 +44,8 @@ const shape = (plan) =>
         assistantLimit: plan.assistant_limit,
         messageLimit: plan.message_limit,
         features: Array.isArray(plan.features) ? plan.features : [],
+        custom: Boolean(plan.custom),
+        billingNote: plan.billing_note || "",
       }
     : null;
 

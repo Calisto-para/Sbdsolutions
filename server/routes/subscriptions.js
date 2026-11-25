@@ -27,6 +27,8 @@ router.get("/", requireAuth, async (req, res, next) => {
         assistantLimit: plan.assistant_limit,
         messageLimit: plan.message_limit,
         features: Array.isArray(plan.features) ? plan.features : [],
+        custom: Boolean(plan.custom),
+        billingNote: plan.billing_note || "",
       })),
       payments: payments.map((row) => ({
         id: row.id,
@@ -51,6 +53,13 @@ router.post("/", requireAuth, async (req, res, next) => {
     const { planId } = z.object({ planId: z.string().trim().min(2).max(40) }).parse(req.body);
     const plan = await one("select * from plans where id = $1", [planId]);
     if (!plan) return res.status(404).json({ error: "That plan does not exist." });
+    if (plan.custom) {
+      return res.status(400).json({
+        error:
+          "Enterprise is priced per agreement. Message us on WhatsApp (+234 906 392 4288) and we will set up monthly or agreed billing with you.",
+        code: "CUSTOM_PLAN",
+      });
+    }
 
     const { subscription } = await currentPlan(req.user.id);
     if (subscription.plan_id === plan.id && !subscription.cancel_at_period_end) {

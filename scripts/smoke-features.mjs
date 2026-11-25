@@ -270,12 +270,22 @@ check("resolved filter works", resolvedFilter.data.conversations?.length === 1);
 
 console.log("subscriptions");
 const subscription = await call("/api/subscriptions", { cookie });
-check("plan listed", subscription.data.plan?.id === "starter" && subscription.data.plans?.length === 3, JSON.stringify(subscription.data.plan));
+check("plan listed", subscription.data.plan?.id === "starter" && subscription.data.plans?.length === 4, JSON.stringify(subscription.data.plan));
+check(
+  "prices are 100, 200, 400 and enterprise is custom",
+  subscription.data.plans.map((plan) => plan.price).slice(0, 3).join(",") === "100,200,400" &&
+    subscription.data.plans[3].custom === true &&
+    /agreed/i.test(subscription.data.plans[3].billingNote),
+  JSON.stringify(subscription.data.plans.map((plan) => [plan.id, plan.price, plan.custom]))
+);
 check("usage counted", subscription.data.usage?.messages >= 3 && subscription.data.usage?.assistants === 1, JSON.stringify(subscription.data.usage));
 
-const upgraded = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "growth" } });
-check("plan upgraded", upgraded.data.planId === "growth", JSON.stringify(upgraded.data));
-check("upgrade recorded in payment history", upgraded.data.payments?.[0]?.planId === "growth" && upgraded.data.payments[0].status === "pending", JSON.stringify(upgraded.data.payments?.[0]));
+const enterprisePlan = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "enterprise" } });
+check("enterprise cannot be self-served", enterprisePlan.status === 400 && enterprisePlan.data.code === "CUSTOM_PLAN", JSON.stringify(enterprisePlan.data));
+
+const upgraded = await call("/api/subscriptions", { method: "POST", cookie, body: { planId: "professional" } });
+check("plan upgraded", upgraded.data.planId === "professional" && upgraded.data.plan?.price === 200, JSON.stringify(upgraded.data.plan));
+check("upgrade recorded in payment history", upgraded.data.payments?.[0]?.planId === "professional" && upgraded.data.payments[0].status === "pending", JSON.stringify(upgraded.data.payments?.[0]));
 
 const secondAssistant = await call("/api/assistants", { method: "POST", cookie, body: { name: "Support Bot" } });
 check("higher plan allows another assistant", secondAssistant.status === 201, JSON.stringify(secondAssistant.data));

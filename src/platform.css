@@ -1929,3 +1929,9 @@
 .assistant-card--button .btn--block {
   pointer-events: none;
 }
+
+.plan-billing {
+  margin: -6px 0 0;
+  font-size: 0.75rem;
+  color: #6b7c99;
+}

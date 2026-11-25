@@ -129,13 +129,16 @@ conversations, and every conversation started on the platform.
   the assistant, and reply as the team. The widget polls the public conversation
   endpoint, so a visitor sees the team's replies and the assistant stops
   answering once a person takes over.
-- **Subscriptions** — Starter (free, 200 messages/month, 1 assistant), Growth
-  and Scale, seeded in `plans`. Customers see their plan, usage against the
-  monthly message and assistant allowances, upgrade/downgrade or cancel, and a
-  payment history. Plan changes take effect immediately and are recorded as
-  invoices settled with the SBD team; the platform does not charge a card.
-  Allowances are enforced when adding an assistant and when a visitor sends a
-  message.
+- **Subscriptions** — Starter (USD 100/month, 200 messages, 1 assistant),
+  Professional (USD 200/month, 2,000 messages, 3 assistants), Business
+  (USD 400/month, 10,000 messages, 10 assistants) and Enterprise (custom,
+  monthly or agreed billing; chosen with the SBD team over WhatsApp). Prices,
+  names and limits live in the `plans` seed in `server/schema.sql` and are kept
+  in step on every boot. Customers see their plan, usage against the monthly
+  allowances, upgrade/downgrade or cancel, and a payment history. Paid changes
+  take effect immediately and are recorded as invoices settled with the SBD
+  team; the platform does not charge a card. Allowances are enforced when
+  adding an assistant and when a visitor sends a message.
 - **Operator monitoring** — the unlisted `/admin` area adds a **Businesses &
   usage** tab with every business and assistant, weekly activity per day, the
   busiest customers, and suspend/reactivate controls on any non-operator

@@ -4,6 +4,10 @@ import { api } from "../../lib/api";
 const money = (amount, currency) =>
   amount === 0 ? "Free" : `${currency} ${Number(amount).toFixed(2)}`;
 
+const WHATSAPP =
+  "https://wa.me/2349063924288?text=" +
+  encodeURIComponent("Hello SBD AI Solutions, I would like to set up the Enterprise plan.");
+
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
 export default function Subscriptions() {
@@ -68,7 +72,10 @@ export default function Subscriptions() {
           <div>
             <h2>Your plan</h2>
             <p>
-              {data.plan?.name} · {money(data.plan?.price || 0, data.plan?.currency || "USD")} per month
+              {data.plan?.name} ·{" "}
+              {data.plan?.custom
+                ? data.plan?.billingNote || "Custom billing"
+                : `${money(data.plan?.price || 0, data.plan?.currency || "USD")} per month`}
               {data.status === "canceled" ? " · cancelled" : ""}
             </p>
           </div>
@@ -124,21 +131,37 @@ export default function Subscriptions() {
               <article className={`plan-card${current ? " is-current" : ""}`} key={plan.id}>
                 <div className="plan-head">
                   <h3>{plan.name}</h3>
-                  <span className="plan-price">{money(plan.price, plan.currency)}<small>{plan.price > 0 ? "/month" : ""}</small></span>
+                  <span className="plan-price">
+                    {plan.custom ? "Custom" : money(plan.price, plan.currency)}
+                    <small>{plan.custom ? "" : "/month"}</small>
+                  </span>
                 </div>
+                <p className="plan-billing">{plan.billingNote}</p>
                 <ul className="plan-features">
                   {plan.features.map((feature) => (
                     <li key={feature}>{feature}</li>
                   ))}
                 </ul>
-                <button
-                  type="button"
-                  className={`btn btn--sm ${current ? "btn--ghost" : "btn--primary"}`}
-                  disabled={current || busy === plan.id}
-                  onClick={() => change(plan.id)}
-                >
-                  {current ? "Current plan" : busy === plan.id ? "Changing…" : plan.price > data.plan.price ? "Upgrade" : "Choose plan"}
-                </button>
+                {plan.custom && !current ? (
+                  <a className="btn btn--ghost btn--sm" href={WHATSAPP} target="_blank" rel="noreferrer">
+                    Talk to us
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className={`btn btn--sm ${current ? "btn--ghost" : "btn--primary"}`}
+                    disabled={current || busy === plan.id}
+                    onClick={() => change(plan.id)}
+                  >
+                    {current
+                      ? "Current plan"
+                      : busy === plan.id
+                        ? "Changing…"
+                        : plan.price > (data.plan?.price || 0)
+                          ? "Upgrade"
+                          : "Choose plan"}
+                  </button>
+                )}
               </article>
             );
           })}

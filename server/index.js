@@ -265,7 +265,6 @@ async function connectDatabase(attempt = 1) {
   try {
     console.log(`[db] connection attempt ${attempt}: connecting to ${env.databaseUrl ? 'Postgres (DATABASE_URL set)' : 'PGlite (no DATABASE_URL)'}...`);
     const db = await getImplementation();
-    console.log('[db] getImplementation succeeded, db.query exists:', typeof db.query);
     const here = path.dirname(new URL(import.meta.url).pathname);
     const sqlPath = path.resolve(here, "schema.sql");
     const sql = fs.readFileSync(sqlPath, "utf8");
@@ -289,9 +288,7 @@ async function connectDatabase(attempt = 1) {
     dbState.ready = false;
     dbState.error = error.message;
     console.error(`[db] connect/migrate attempt ${attempt} failed: ${error.message}`);
-    console.error(`[db] error type: ${error.constructor.name}`);
-    console.error(`[db] error stack: ${error.stack || 'NO STACK'}`);
-    console.error(`[db] error name: ${error.name || 'NO NAME'}`);
+
     if (attempt < 24) {
       setTimeout(() => connectDatabase(attempt + 1), 5000);
     } else {

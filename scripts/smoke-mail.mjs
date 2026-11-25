@@ -107,7 +107,7 @@ console.log("operator diagnostics");
 const status = await call("/api/admin/email", { cookie });
 check("diagnostics 200", status.status === 200, JSON.stringify(status.data).slice(0, 200));
 check("diagnostics flag the sender", status.data.ok === false, JSON.stringify(status.data).slice(0, 200));
-check("hint explains the Resend/Gmail limit", /free mailbox domain/.test(status.data.hint || ""), status.data.hint);
+check("hint names an actionable fix", /free mailbox domain|Set MAIL_FROM/.test(status.data.hint || ""), status.data.hint);
 check("provider check lists verified domains", Array.isArray(status.data.checks?.[0]?.verifiedDomains), JSON.stringify(status.data.checks));
 
 const testBad = await call("/api/admin/email-test", { method: "POST", cookie });

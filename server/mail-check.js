@@ -215,10 +215,6 @@ export async function mailDiagnostics() {
     return result;
   }
 
-  if (providers.includes("resend") && isFreeMailbox()) {
-    result.hint = "Resend cannot verify a free mailbox domain such as Gmail. Either verify a domain you own at resend.com/domains, or set BREVO_API_KEY and verify this mailbox as a sender in Brevo.";
-  }
-
   for (const provider of providers) {
     try {
       if (provider === "resend" && env.mail.resend.apiKey) result.checks.push(await resendCheck());
@@ -240,11 +236,15 @@ export async function mailDiagnostics() {
     ? `Sending through ${working.provider}.`
     : result.checks[0]?.message || "The email provider rejected the sender.";
 
+  /* Hints describe a fix, so only show one when nothing is delivering. A working
+     primary sender makes an unusable fallback irrelevant noise. */
   /* Name the fix when the provider has a verified address the app is not using. */
   const failing = result.checks.find((check) => !check.ok && check.verifiedDomains?.length);
   if (!result.ok && failing) {
     const suggestion = failing.verifiedDomains[0];
     result.hint = `Set MAIL_FROM to "SBD AI Solutions <${suggestion}>" in the service environment (or verify ${result.sender} in ${failing.provider}), then restart. Currently it sends from ${result.sender}.`;
+  } else if (!result.ok && providers.includes("resend") && isFreeMailbox()) {
+    result.hint = "Resend cannot verify a free mailbox domain such as Gmail. Either verify a domain you own at resend.com/domains, or set BREVO_API_KEY and verify this mailbox as a sender in Brevo.";
   }
 
   return result;

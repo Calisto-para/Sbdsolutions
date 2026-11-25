@@ -96,6 +96,7 @@ const status = await call("/api/admin/email", { cookie });
 check("operator check reports working", status.data.ok === true, JSON.stringify(status.data).slice(0, 200));
 check("operator check names Brevo", status.data.provider === "brevo", String(status.data.provider));
 check("verified sender is listed", (status.data.checks?.[0]?.verifiedDomains || []).includes("support.sbiamautos@gmail.com"), JSON.stringify(status.data.checks));
+check("working sender shows no fallback warning", !status.data.hint, status.data.hint);
 
 const test = await call("/api/admin/email-test", { method: "POST", cookie });
 check("test email goes through Brevo", test.data.delivered === true && test.data.provider === "brevo", JSON.stringify(test.data));

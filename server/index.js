@@ -249,9 +249,11 @@ async function runMigration() {
 
 async function connectDatabase(attempt = 1) {
   try {
+    console.log(`[db] connection attempt ${attempt}: connecting to ${env.databaseUrl ? 'Postgres (DATABASE_URL set)' : 'PGlite (no DATABASE_URL)'}...`);
     await runMigration();
     dbState.ready = true;
     dbState.error = null;
+    console.log(`[db] connection attempt ${attempt}: ready`);
   } catch (error) {
     dbState.ready = false;
     dbState.error = error.message;

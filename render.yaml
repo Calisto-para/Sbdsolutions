@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sbd-solutions
+    name: sbdaisolutions
     runtime: node
     plan: starter
     buildCommand: npm ci && npm run build

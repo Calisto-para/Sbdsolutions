@@ -4,9 +4,6 @@ export default function Home() {
   return (
     <>
 <section className="hero">
-    <div className="hero-visual" aria-hidden="true">
-      <img src="/assets/sbd-ai-robot.png" alt="" width="755" height="400" />
-    </div>
     <div className="container hero-inner">
       <div className="hero-copy reveal">
         <p className="eyebrow">AI &amp; automation partner</p>
@@ -19,6 +16,9 @@ export default function Home() {
           <Link className="btn btn--ghost" to="/start-a-project">Start a Project</Link>
         </div>
       </div>
+    </div>
+    <div className="hero-visual" aria-hidden="true">
+      <img src="/assets/sbd-ai-robot.png" alt="" width="755" height="400" />
     </div>
     <div className="container">
       <div className="hero-highlights reveal">

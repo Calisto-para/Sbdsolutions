@@ -2349,12 +2349,29 @@ a.card:hover .card-arrow::after {
     padding: 48px 0 0;
   }
 
+  /* On phones the photograph moves into the flow below the copy instead of
+     sitting behind it, so the robot stays part of the page. */
   .hero-visual {
+    position: relative;
+    inset: auto;
+    width: auto;
+    max-width: none;
+    margin: 4px 20px 0;
+  }
+
+  .hero-visual::after {
     display: none;
   }
 
+  .hero-visual img {
+    height: auto;
+    aspect-ratio: 4 / 3;
+    object-position: 68% center;
+    border-radius: 18px;
+  }
+
   .hero-inner {
-    padding-bottom: 64px;
+    padding-bottom: 24px;
   }
 
   .hero-highlights {

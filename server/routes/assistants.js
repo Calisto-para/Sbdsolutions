@@ -207,7 +207,60 @@ router.get("/:id/knowledge", requireAuth, async (req, res, next) => {
       "select * from knowledge_items where assistant_id = $1 order by created_at desc",
       [assistant.id]
     );
-    res.json({ items: rows.map(knowledgeApi) });
+    res.json({
+      items: rows.map(knowledgeApi),
+      documents: rows.filter((row) => row.kind === "document").length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/knowledge/:itemId", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+
+    const row = await one(
+      "select * from knowledge_items where id = $1 and assistant_id = $2 and user_id = $3",
+      [req.params.itemId, assistant.id, req.user.id]
+    );
+    if (!row) return res.status(404).json({ error: "That training item was not found." });
+    res.json({ item: knowledgeApi(row), characters: String(row.content || "").length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Ask questions about one document on its own, without the rest of the
+   assistant's training. Useful for a long price list or service guide. */
+router.post("/:id/knowledge/:itemId/ask", requireAuth, async (req, res, next) => {
+  try {
+    const assistant = await ownedAssistant(req.user.id, req.params.id);
+    if (!assistant) return res.status(404).json({ error: "Assistant not found." });
+
+    const item = await one(
+      "select * from knowledge_items where id = $1 and assistant_id = $2 and user_id = $3",
+      [req.params.itemId, assistant.id, req.user.id]
+    );
+    if (!item) return res.status(404).json({ error: "That training item was not found." });
+
+    const { question } = z
+      .object({ question: z.string().trim().min(2, "Type a question first.").max(600) })
+      .parse(req.body);
+
+    const system = [
+      `You are ${assistant.name}, answering questions about one document for ${item.source_name || "the business"}.`,
+      "Answer only from the document below. If the answer is not in it, say so plainly and do not guess.",
+      `Quote prices, dates and names exactly as they appear. Reply in ${assistant.language || "English"}.`,
+      "Keep the answer short and practical.",
+      "",
+      `Document: ${item.title || item.source_name || "Training document"}`,
+      String(item.content || "").slice(0, 120000),
+    ].join("\n");
+
+    const answer = await complete({ system, messages: [{ role: "user", content: question }] });
+    res.json({ answer });
   } catch (error) {
     next(error);
   }

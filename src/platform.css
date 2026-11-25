@@ -1935,3 +1935,36 @@
   font-size: 0.75rem;
   color: #6b7c99;
 }
+
+.document-qa {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #dbe8fb;
+  border-radius: 10px;
+  background: #f7faff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.document-qa strong {
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.document-qa .chat-form {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.document-answer {
+  background: #fff;
+  border: 1px solid #e3ebfa;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: #23324d;
+  white-space: pre-wrap;
+}

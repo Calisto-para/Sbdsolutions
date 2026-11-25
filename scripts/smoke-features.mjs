@@ -178,6 +178,35 @@ const pdfChat = await call(`/api/assistants/${assistant.id}/chat`, {
 });
 check("assistant answers using the PDF", pdfChat.status === 200, JSON.stringify(pdfChat.data));
 check("PDF text reaches the AI prompt", lastAiRequest.includes("Starter plan - 0 USD per month"), lastAiRequest.slice(0, 160));
+check("training list counts saved PDFs", knowledge.data.documents === 1, String(knowledge.data.documents));
+check(
+  "API answers are never browser-cached",
+  /no-store/.test(knowledge.headers.get("cache-control") || ""),
+  knowledge.headers.get("cache-control")
+);
+
+const freshSession = await call("/api/auth/login", { method: "POST", body: { email: clientEmail, password: "Password123" } });
+const persisted = await call(`/api/assistants/${assistant.id}/knowledge`, { cookie: freshSession.cookie });
+check(
+  "PDF is still there after a refresh (fresh session)",
+  persisted.data.items?.some((item) => item.kind === "document" && /price/i.test(item.title)),
+  JSON.stringify(persisted.data.items?.map((i) => i.title))
+);
+
+const reopened = await call(`/api/assistants/${assistant.id}/knowledge/${priceList.data.item.id}`, { cookie });
+check("stored document text can be reopened", /Starter plan - 0 USD per month/.test(reopened.data.item?.content || ""));
+
+const documentAsk = await call(`/api/assistants/${assistant.id}/knowledge/${priceList.data.item.id}/ask`, {
+  method: "POST",
+  cookie,
+  body: { question: "How much does the Growth plan cost?" },
+});
+check("document question answered", documentAsk.status === 200 && !!documentAsk.data.answer, JSON.stringify(documentAsk.data));
+check(
+  "answer is built from that document alone",
+  lastAiRequest.includes("Document: price-list.pdf") && lastAiRequest.includes("Starter plan - 0 USD per month"),
+  lastAiRequest.slice(0, 200)
+);
 
 const noTextPdf = await uploadPdf(cookie, assistant.id, buildPdf([]), "scan.pdf");
 check("image-only PDF is rejected clearly", noTextPdf.status === 422 && /text|PDF/i.test(noTextPdf.data.error || ""), JSON.stringify(noTextPdf.data));

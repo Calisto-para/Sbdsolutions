@@ -95,7 +95,9 @@ function Training({ assistantId, items, reload, setError }) {
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({ title: "", content: "" });
+  const [asking, setAsking] = useState(null);
   const fileRef = useRef(null);
+  const documents = items.filter((item) => item.kind === "document").length;
 
   async function addItem(event) {
     event.preventDefault();
@@ -217,7 +219,10 @@ function Training({ assistantId, items, reload, setError }) {
       <section className="panel">
         <div className="panel-head">
           <h3>Training material ({items.length})</h3>
-          <p>Your assistant uses all of this — including uploaded PDFs — when it answers.</p>
+          <p>
+            {documents ? `${documents} PDF${documents === 1 ? "" : "s"} saved · ` : ""}
+            stored on the platform, so it is still here after a refresh. Your assistant uses all of it when it answers.
+          </p>
         </div>
         {items.length ? (
           <ul className="training-list">
@@ -239,12 +244,27 @@ function Training({ assistantId, items, reload, setError }) {
                 ) : (
                   <>
                     <p className="training-text">{item.content.slice(0, 260)}{item.content.length > 260 ? "…" : ""}</p>
+                    {item.kind === "document" ? (
+                      <p className="panel-note">
+                        {item.content.length.toLocaleString("en-GB")} characters read from this PDF
+                      </p>
+                    ) : null}
                     <div className="training-actions">
+                      {item.kind === "document" ? (
+                        <button
+                          className="panel-link"
+                          type="button"
+                          onClick={() => setAsking(asking === item.id ? null : item.id)}
+                        >
+                          {asking === item.id ? "Close questions" : "Ask this document"}
+                        </button>
+                      ) : null}
                       <button className="panel-link" type="button" onClick={() => { setEditing(item.id); setEditForm({ title: item.title, content: item.content }); }}>
                         Edit
                       </button>
                       <button className="panel-link panel-link--danger" type="button" onClick={() => remove(item.id)}>Delete</button>
                     </div>
+                    {asking === item.id ? <DocumentQuestions assistantId={assistantId} item={item} /> : null}
                   </>
                 )}
               </li>
@@ -254,6 +274,54 @@ function Training({ assistantId, items, reload, setError }) {
           <div className="empty">No training material yet. Add business information, an FAQ or a PDF.</div>
         )}
       </section>
+    </div>
+  );
+}
+
+/* Ask the assistant about one uploaded document on its own. */
+function DocumentQuestions({ assistantId, item }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function ask(event) {
+    event.preventDefault();
+    if (!question.trim()) return;
+    setBusy(true);
+    setError("");
+    setAnswer("");
+    try {
+      const data = await api(`/assistants/${assistantId}/knowledge/${item.id}/ask`, {
+        method: "POST",
+        body: { question: question.trim() },
+      });
+      setAnswer(data.answer);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="document-qa">
+      <strong>Ask about {item.sourceName || item.title || "this document"}</strong>
+      <p className="panel-note">Answers come only from this document.</p>
+      <form className="chat-form" onSubmit={ask}>
+        <input
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="e.g. What does the Growth plan cost?"
+          aria-label="Question about this document"
+          maxLength={600}
+        />
+        <button className="btn btn--primary btn--sm" type="submit" disabled={busy}>
+          {busy ? "Reading…" : "Ask"}
+        </button>
+      </form>
+      {error ? <div className="form-alert form-alert--error">{error}</div> : null}
+      {answer ? <div className="document-answer">{answer}</div> : null}
     </div>
   );
 }

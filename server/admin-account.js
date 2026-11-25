@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { one } from "./db.js";
+import { one, query } from "./db.js";
 import { hashPassword } from "./auth.js";
 import { env } from "./env.js";
 

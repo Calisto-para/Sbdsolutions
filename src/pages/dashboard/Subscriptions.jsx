@@ -112,8 +112,19 @@ export default function Subscriptions() {
   if (error && !data) return <div className="form-alert form-alert--error">{error}</div>;
   if (!data) return <div className="dash-loading">Loading your plan…</div>;
 
-  const messagePercent = Math.min(100, Math.round((data.usage.messages / Math.max(1, data.usage.messageLimit)) * 100));
-  const assistantPercent = Math.min(100, Math.round((data.usage.assistants / Math.max(1, data.usage.assistantLimit)) * 100));
+  const messagePercent = Math.min(
+    100,
+    Math.round((data.usage.messages / Math.max(1, data.usage.messageLimit)) * 100)
+  );
+  const assistantPercent = Math.min(
+    100,
+    Math.round((data.usage.assistants / Math.max(1, data.usage.assistantLimit)) * 100)
+  );
+  const creditLimit = data.usage.creditLimit;
+  const creditsUsed = data.usage.creditsUsed;
+  const creditPercent = creditLimit && creditLimit > 0
+    ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100))
+    : 0;
   const bank = data.paymentConfig?.bank;
   const online = data.paymentConfig?.online;
 
@@ -163,10 +174,16 @@ export default function Subscriptions() {
           </div>
           <div className="usage-item">
             <div className="usage-head">
-              <span>AI tokens this month</span>
-              <strong>{data.usage.tokensUsed} / {data.usage.tokenLimit?.toLocaleString("en-GB") || "∞"}</strong>
+              <span>SBD AI credits this month</span>
+              <strong>
+                {data.usage.creditLimit == null
+                  ? "Custom"
+                  : `${data.usage.creditsUsed.toLocaleString("en-GB")} / ${data.usage.creditLimit.toLocaleString("en-GB")}`}
+              </strong>
             </div>
-            <div className="usage-bar"><span style={{ width: `${data.usage.tokenLimit ? Math.min(100, Math.round((data.usage.tokensUsed / Math.max(1, data.usage.tokenLimit)) * 100)) : 0}%` }} /></div>
+            <div className="usage-bar">
+              <span style={{ width: `${creditPercent}%` }} />
+            </div>
           </div>
           <div className="usage-item">
             <div className="usage-head">
@@ -294,8 +311,10 @@ export default function Subscriptions() {
                     <li key={feature}>{feature}</li>
                   ))}
                 </ul>
-                {plan.tokenLimit > 0 && !plan.tokenPriceHidden ? (
-                  <p className="panel-note">{plan.tokenLimit.toLocaleString("en-GB")} AI tokens included each month</p>
+                {plan.creditLimit != null && plan.creditLimit > 0 ? (
+                  <p className="panel-note">
+                    {plan.creditLimit.toLocaleString("en-GB")} SBD AI credits included each month · $1 of OpenAI use = 1,000 credits
+                  </p>
                 ) : null}
                 {plan.custom && !current ? (
                   <a className="btn btn--ghost btn--sm" href={WHATSAPP} target="_blank" rel="noreferrer">

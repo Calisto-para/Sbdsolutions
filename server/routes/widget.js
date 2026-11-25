@@ -2,8 +2,8 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { query, one } from "../db.js";
-import { buildSystemPrompt, complete } from "../ai.js";
-import { messageAllowanceError } from "../plans.js";
+import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
+import { messageAllowanceError, requireActiveAiAccount } from "../plans.js";
 
 /* Public chatbot endpoints used by the embeddable widget. There is no session
    here: the assistant's public key identifies the business, and a conversation
@@ -97,7 +97,14 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     }
 
     const allowance = await messageAllowanceError(assistant.user_id);
-    if (allowance) return res.status(429).json({ error: allowance, code: "MESSAGE_LIMIT" });
+    const ownerBlocked = await messageAllowanceError(assistant.user_id);
+    if (ownerBlocked) return res.status(429).json({ error: ownerBlocked, code: "MESSAGE_LIMIT" });
+
+    try {
+      await requireActiveAiAccount(assistant.user_id);
+    } catch (accountError) {
+      return res.status(accountError.status || 503).json({ error: accountError.message, code: accountError.code });
+    }
 
     const body = z
       .object({
@@ -150,7 +157,7 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     );
 
     const system = buildSystemPrompt({ assistant, business, knowledge, channel: "widget" });
-    const reply = await complete({
+    const result = await complete({
       system,
       messages: [
         ...history
@@ -162,11 +169,13 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
 
     await query(
       "insert into messages (conversation_id, role, content, author) values ($1, 'assistant', $2, 'ai')",
-      [conversation.id, reply]
+      [conversation.id, result.text]
     );
 
+    await recordAiCost(assistant.user_id, result.usage);
+
     const lead = await saveLead(assistant, conversation, details);
-    res.json({ conversationId: conversation.id, reply, leadCaptured: lead });
+    res.json({ conversationId: conversation.id, reply: result.text, leadCaptured: lead });
   } catch (error) {
     next(error);
   }

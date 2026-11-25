@@ -4,7 +4,12 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete } from "../ai.js";
-import { assistantAllowanceError, checkTokenLimit, addTokenUsage } from "../plans.js";
+import {
+  assistantAllowanceError,
+  checkTokenLimit,
+  addTokenUsage,
+  requireActiveAiAccount,
+} from "../plans.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -263,26 +268,15 @@ router.post("/:id/knowledge/:itemId/ask", requireAuth, async (req, res, next) =>
       String(item.content || "").slice(0, 120000),
     ].join("\n");
 
-    const answer = await complete({ system, messages: [{ role: "user", content: question }] });
+    const result = await complete({ system, messages: [{ role: "user", content: question }] });
+    const answer = result.text;
 
-    /* Token cost: each document question costs 3 tokens. */
+    /* Keep the legacy token counter in lockstep so nothing else breaks, but
+       bill the real OpenAI usage against the customer's SBD AI credits and
+       the internal dollar cap. */
     const tokenCost = 3;
     await addTokenUsage(req.user.id, tokenCost);
-
-    /* Check after adding — if the user just exhausted their allowance,
-       suspend them. */
-    const afterError = await checkTokenLimit(req.user.id);
-    if (afterError) {
-      const { plan } = await currentPlan(req.user.id);
-      await query(
-        `update users
-           set suspended_at = now(),
-               suspended_reason = $2,
-               updated_at = now()
-         where id = $1`,
-        [req.user.id, `Token allowance (${plan?.name || "your"} plan) exhausted — renew or upgrade to continue.`]
-      );
-    }
+    await recordAiCost(req.user.id, result.usage);
 
     res.json({ answer, tokensUsed: tokenCost });
   } catch (error) {
@@ -391,6 +385,8 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
       ]
     );
 
+    await recordAiCost(req.user.id, null);
+
     res.status(201).json({
       item: knowledgeApi(row),
       characters: visibleCharacters,
@@ -483,6 +479,12 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
     const tokenError = await checkTokenLimit(req.user.id);
     if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
 
+    try {
+      await requireActiveAiAccount(req.user.id);
+    } catch (accountError) {
+      return res.status(accountError.status || 503).json({ error: accountError.message, code: accountError.code });
+    }
+
     const body = z
       .object({
         message: z.string().trim().min(1, "Type a message first.").max(2000),
@@ -518,26 +520,15 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
       { role: "user", content: body.message },
     ];
 
-    const reply = await complete({ system, messages });
+    const result = await complete({ system, messages });
+    const reply = result.text;
 
-    /* Token cost: each message pair (user + assistant) costs 5 tokens. */
+    /* Keep the legacy token counter in lockstep so nothing else breaks, but
+       bill the real OpenAI usage against the customer's SBD AI credits and
+       the internal dollar cap. */
     const tokenCost = 5;
     await addTokenUsage(req.user.id, tokenCost);
-
-    /* Check after adding — if the user just exhausted their allowance,
-       suspend them. */
-    const afterError = await checkTokenLimit(req.user.id);
-    if (afterError) {
-      const { plan } = await currentPlan(req.user.id);
-      await query(
-        `update users
-           set suspended_at = now(),
-               suspended_reason = $2,
-               updated_at = now()
-         where id = $1`,
-        [req.user.id, `Token allowance (${plan?.name || "your"} plan) exhausted — renew or upgrade to continue.`]
-      );
-    }
+    await recordAiCost(req.user.id, result.usage);
 
     if (!conversation) {
       conversation = await one(

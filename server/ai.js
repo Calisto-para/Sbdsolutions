@@ -1,5 +1,14 @@
 import OpenAI from "openai";
-import { env, aiConfigured } from "./env.js";
+import { env, aiConfigured, openaiPricesConfigured, openaiPrices } from "./env.js";
+import { query } from "./db.js";
+import {
+  recordCreditUsage,
+  recordSpending,
+  checkCreditLimit,
+  checkSpendingLimit,
+  costInDollars,
+  creditsFor,
+} from "./plans.js";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
@@ -82,5 +91,50 @@ export async function complete({ system, messages }) {
   });
   const text = response.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error("The AI returned an empty response.");
-  return text;
+  const usage = response.usage ?? null;
+  return { text, usage };
+}
+
+/* Record the real OpenAI cost of one completed request against a customer
+   account: convert the usage into dollars, convert dollars into SBD AI
+   credits, enforce both the credit allowance and the internal dollar cap,
+   and suspend the account if either runs out. The dollar cost is computed
+   from the actual usage, not from any fixed per-message number. */
+export async function recordAiCost(userId, usage) {
+  if (!usage) return;
+  const dollars = costInDollars(usage, openaiPrices);
+  if (dollars <= 0) return;
+  await recordSpending(userId, dollars);
+  const creditCost = creditsFor(dollars);
+  if (creditCost <= 0) return;
+
+  const creditError = await checkCreditLimit(userId);
+  if (creditError) {
+    await query(
+      `update users
+         set suspended_at = now(),
+             suspended_reason = $2,
+             updated_at = now()
+       where id = $1`,
+      [
+        userId,
+        `SBD AI credits (${(openaiPrices.inputPricePerM ?? 0) > 0 ? "plan allowance" : "plan allowance"} exhausted — renew or upgrade to continue.`,
+      ]
+    );
+    return;
+  }
+
+  await recordCreditUsage(userId, creditCost);
+
+  const spendError = await checkSpendingLimit(userId);
+  if (spendError) {
+    await query(
+      `update users
+         set suspended_at = now(),
+             suspended_reason = $2,
+             updated_at = now()
+       where id = $1`,
+      [userId, spendError]
+    );
+  }
 }

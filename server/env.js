@@ -57,6 +57,18 @@ export const env = {
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     baseUrl: process.env.OPENAI_BASE_URL || "",
   },
+  /* Per-token OpenAI prices for the configured OPENAI_MODEL, in USD per
+     1,000,000 tokens. These must match the selected model. If they are
+     missing or invalid the AI routes reject requests instead of assuming
+     $0 cost. Keep in step with the model configured above. */
+  openaiPrices: {
+    inputPricePerM:
+      Number.parseFloat(process.env.OPENAI_INPUT_PRICE_PER_M || ""),
+    outputPricePerM:
+      Number.parseFloat(process.env.OPENAI_OUTPUT_PRICE_PER_M || ""),
+    cachedInputPricePerM:
+      Number.parseFloat(process.env.OPENAI_CACHED_INPUT_PRICE_PER_M || ""),
+  },
   mail: {
     /* brevo | resend | smtp. Empty means: first configured provider wins. */
     provider: (process.env.EMAIL_PROVIDER || "").trim().toLowerCase(),
@@ -81,12 +93,25 @@ export const env = {
     },
   },
 };
-
-export const dbConfigured = Boolean(env.databaseUrl);
 export const emailConfigured = Boolean(
   env.mail.brevo.apiKey || env.mail.resend.apiKey || env.mail.smtp.host
 );
 export const aiConfigured = Boolean(env.openai.apiKey);
+
+export const openaiPricesConfigured = (() => {
+  const { inputPricePerM, outputPricePerM, cachedInputPricePerM } = env.openaiPrices;
+  if (
+    !Number.isFinite(inputPricePerM) ||
+    !Number.isFinite(outputPricePerM) ||
+    !Number.isFinite(cachedInputPricePerM)
+  ) {
+    return false;
+  }
+  if (inputPricePerM < 0 || outputPricePerM < 0 || cachedInputPricePerM < 0) {
+    return false;
+  }
+  return true;
+})();
 
 if (env.isProd && env.sessionSecret.startsWith("dev-only")) {
   console.warn("[config] SESSION_SECRET is not set — set it before running in production.");

@@ -129,6 +129,8 @@ create table if not exists plans (
   assistant_limit integer not null default 1,
   message_limit integer not null default 200,
   token_limit integer not null default 0,
+  credit_limit integer,
+
   features jsonb not null default '[]'::jsonb,
   sort_order integer not null default 0
 );
@@ -139,11 +141,12 @@ alter table plans add column if not exists custom boolean not null default false
 alter table plans add column if not exists billing_note text not null default '';
 alter table plans add column if not exists token_price_hidden boolean not null default false;
 alter table plans add column if not exists underlying_cost numeric(10, 2);
-insert into plans (id, name, price, currency, assistant_limit, message_limit, token_limit, features, sort_order, custom, billing_note, token_price_hidden, underlying_cost) values
-  ('starter', 'Starter', 15, 'USD', 1, 200, 3000, '["1 AI assistant", "200 visitor messages a month", "Website chatbot", "Lead collection", "3,000 AI tokens a month"]'::jsonb, 1, false, 'Billed monthly', true, 3),
-  ('professional', 'Professional', 35, 'USD', 3, 2000, 10000, '["3 AI assistants", "2,000 visitor messages a month", "Website chatbot", "Lead collection", "10,000 AI tokens a month", "Priority support"]'::jsonb, 2, false, 'Billed monthly', true, 10),
-  ('business', 'Business', 65, 'USD', 10, 10000, 25000, '["10 AI assistants", "10,000 visitor messages a month", "Website chatbot", "Lead collection", "25,000 AI tokens a month", "Priority support"]'::jsonb, 3, false, 'Billed monthly', true, 25),
-  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, 0, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "Dedicated support"]'::jsonb, 4, true, 'Monthly or agreed billing', false, null)
+alter table plans add column if not exists credit_limit integer;
+insert into plans (id, name, price, currency, assistant_limit, message_limit, token_limit, credit_limit, features, sort_order, custom, billing_note, token_price_hidden, underlying_cost) values
+  ('starter', 'Starter', 15, 'USD', 1, 35, 3000, 3000, '["1 AI assistant", "35 visitor messages a month", "Website chatbot", "Lead collection", "3,000 SBD AI credits a month"]'::jsonb, 1, false, 'Billed monthly', true, 3),
+  ('professional', 'Professional', 35, 'USD', 3, 100, 10000, 10000, '["3 AI assistants", "100 visitor messages a month", "Website chatbot", "Lead collection", "10,000 SBD AI credits a month", "Priority support"]'::jsonb, 2, false, 'Billed monthly', true, 10),
+  ('business', 'Business', 65, 'USD', 10, 200, 25000, 25000, '["10 AI assistants", "200 visitor messages a month", "Website chatbot", "Lead collection", "25,000 SBD AI credits a month", "Priority support"]'::jsonb, 3, false, 'Billed monthly', true, 25),
+  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, 0, null, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "SBD AI credits by agreement"]'::jsonb, 4, true, 'Monthly or agreed billing', false, null)
 on conflict (id) do update
   set name = excluded.name,
       price = excluded.price,
@@ -151,9 +154,10 @@ on conflict (id) do update
       assistant_limit = excluded.assistant_limit,
       message_limit = excluded.message_limit,
       token_limit = excluded.token_limit,
+      credit_limit = excluded.credit_limit,
       features = excluded.features,
       sort_order = excluded.sort_order,
-      custom = false,
+      custom = excluded.custom,
       billing_note = excluded.billing_note,
       token_price_hidden = excluded.token_price_hidden,
       underlying_cost = excluded.underlying_cost;
@@ -166,9 +170,13 @@ create table if not exists subscriptions (
   started_at timestamptz not null default now(),
   current_period_end timestamptz not null default now() + interval '30 days',
   tokens_used integer not null default 0,
+  credits_used numeric not null default 0,
+  spending_used numeric not null default 0,
   updated_at timestamptz not null default now()
 );
 alter table subscriptions add column if not exists tokens_used integer not null default 0;
+alter table subscriptions add column if not exists credits_used numeric not null default 0;
+alter table subscriptions add column if not exists spending_used numeric not null default 0;
 
 /* Retire the old plan ids without stranding anyone who was subscribed to them.
    Runs after subscriptions exists, so a fresh database starts cleanly. */

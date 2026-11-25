@@ -44,6 +44,16 @@ const authLimiter = rateLimit({
   message: { error: "Too many attempts. Please wait a few minutes and try again." },
 });
 
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const db = await getImplementation();
+    const result = await db.query("select now() as now, current_database() as db");
+    res.json({ ok: true, ...result[0], kind: dbKind() });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message, stack: error.stack });
+  }
+});
+
 app.get("/api/health", (req, res) => {
   /* Kicks off a background, read-only sender check; never blocks this probe. */
   const mail = emailHealthSnapshot();

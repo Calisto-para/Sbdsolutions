@@ -97,6 +97,7 @@ export const emailConfigured = Boolean(
   env.mail.brevo.apiKey || env.mail.resend.apiKey || env.mail.smtp.host
 );
 export const aiConfigured = Boolean(env.openai.apiKey);
+export const dbConfigured = Boolean(env.databaseUrl);
 
 export const openaiPrices = env.openaiPrices;
 

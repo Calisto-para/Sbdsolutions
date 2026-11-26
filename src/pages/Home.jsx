@@ -1,178 +1,433 @@
 import { Link } from "react-router-dom";
+import { SERVICES } from "../../shared/project-services";
+
+const icon = (paths) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {paths}
+  </svg>
+);
+
+const ICONS = {
+  assistant: icon(<><rect x="3" y="7" width="18" height="12" rx="3" /><path d="M12 3v4M8 13h.01M16 13h.01M9 17h6" /></>),
+  chatbot: icon(<><path d="M21 12a8 8 0 0 1-12 7L4 21l1.6-4.4A8 8 0 1 1 21 12Z" /><path d="M9 11h.01M12 11h.01M15 11h.01" /></>),
+  whatsapp: icon(<><path d="M21 12a8 8 0 0 1-12 7L4 21l1.6-4.4A8 8 0 1 1 21 12Z" /><path d="M9 10c0 3 2.4 4.8 4.8 4.8" /></>),
+  automation: icon(<><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></>),
+  website: icon(<><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M3 9h18M7 13h4" /><path d="M2 21h20" /></>),
+  corporate: icon(<><path d="M4 21h16M6 21V8l6-4 6 4v13" /><path d="M10 12h4M10 16h4" /></>),
+  ecommerce: icon(<><path d="M4 5h2l2.4 10.4A2 2 0 0 0 10.3 17h7.9a2 2 0 0 0 2-1.6L21.5 8H7" /><circle cx="10" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /></>),
+  software: icon(<><path d="m8 8-5 4 5 4M16 8l5 4-5 4" /><path d="m13 5-3 14" /></>),
+  systems: icon(<><rect x="3" y="4" width="18" height="6" rx="2" /><rect x="3" y="14" width="18" height="6" rx="2" /><path d="M7 7h.01M7 17h.01" /></>),
+  booking: icon(<><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 11h18" /><path d="m9 16 2 2 4-4" /></>),
+  platform: icon(<><path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" /></>),
+  shield: icon(<><path d="M12 3 5 6v6c0 4 3 7 7 8 4-1 7-4 7-8V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></>),
+  chart: icon(<><path d="M4 20V6M10 20V10M16 20v-6M22 20H2" /></>),
+  chat: icon(<><path d="M4 5h16v11H9l-5 4V5Z" /><path d="M8 10h8" /></>),
+};
+
+const SERVICE_CARDS = [
+  {
+    name: "AI Customer Assistants",
+    icon: ICONS.assistant,
+    text: "A trained assistant that answers customer questions on your website, day and night, in your brand's voice.",
+    to: "/services#ai-solutions",
+  },
+  {
+    name: "AI Chatbot Development",
+    icon: ICONS.chatbot,
+    text: "Custom chatbots built around your services, pricing and FAQs — installed on your site with one script.",
+    to: "/start-a-project?service=ai-chatbot-integration",
+  },
+  {
+    name: "WhatsApp AI Automation",
+    icon: ICONS.whatsapp,
+    text: "Automated replies, enquiry capture and follow-ups on the channel your customers already use.",
+    to: "/start-a-project?service=whatsapp-ai-automation",
+  },
+  {
+    name: "Business Process Automation",
+    icon: ICONS.automation,
+    text: "Workflows, notifications and integrations that remove repetitive manual work from your team.",
+    to: "/start-a-project?service=business-workflow-automation",
+  },
+  {
+    name: "Business Website Development",
+    icon: ICONS.website,
+    text: "A credible company website that explains what you do and turns visitors into enquiries.",
+    to: "/start-a-project?service=business-website",
+  },
+  {
+    name: "Corporate Website Development",
+    icon: ICONS.corporate,
+    text: "A fuller corporate presence with the structure and credibility a growing organisation needs.",
+    to: "/start-a-project?service=corporate-website",
+  },
+  {
+    name: "E-commerce Development",
+    icon: ICONS.ecommerce,
+    text: "An online store with product management, checkout and the order handling behind it.",
+    to: "/start-a-project?service=ecommerce-website",
+  },
+  {
+    name: "Custom Software Development",
+    icon: ICONS.software,
+    text: "Web applications and internal tools built around how your business actually works.",
+    to: "/start-a-project?service=custom-web-application",
+  },
+  {
+    name: "Business Management Systems",
+    icon: ICONS.systems,
+    text: "Records, staff, stock, invoices and reporting in one system your team can rely on daily.",
+    to: "/start-a-project?service=business-management-system",
+  },
+  {
+    name: "Booking & Reservation Platforms",
+    icon: ICONS.booking,
+    text: "Availability, bookings, reminders and payment handling for service businesses.",
+    to: "/start-a-project?service=booking-reservation-platform",
+  },
+];
+
+const PRICE_ROWS = SERVICES.map((service) => ({
+  slug: service.slug,
+  name: service.name,
+  ngn: service.ngn,
+  usd: service.usd,
+}));
+
+const PROCESS = [
+  {
+    title: "You contact us",
+    text: "Send an enquiry, message us on WhatsApp, or book a short call. Tell us the goal in plain language.",
+  },
+  {
+    title: "We understand the requirement",
+    text: "We ask the questions that matter — scope, users, data, deadlines — and confirm what success looks like.",
+  },
+  {
+    title: "We recommend a solution",
+    text: "You receive a written recommendation: the approach, the deliverables, the timeline and the cost.",
+  },
+  {
+    title: "We build and implement",
+    text: "Work happens in visible stages with previews, so feedback arrives while changes are still inexpensive.",
+  },
+  {
+    title: "We support what we deliver",
+    text: "Handover includes documentation and training, with optional ongoing support agreed in writing.",
+  },
+];
+
+const currency = (value) => `₦${value.toLocaleString("en-NG")}`;
 
 export default function Home() {
   return (
     <>
-<section className="hero">
-    <div className="container hero-inner">
-      <div className="hero-copy reveal">
-        <p className="eyebrow">AI &amp; automation partner</p>
-        <h1>Intelligent Technology.<br /><span>Smarter Business.</span></h1>
-        <p className="lead">SBD AI Solutions is a technology company helping businesses transform their operations through artificial intelligence, intelligent automation and custom software solutions. We build digital tools that simplify business processes, improve customer experiences and support business growth.</p>
-        <div className="btn-row">
-          <Link className="btn btn--primary" to="/services">Explore Our Solutions
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
-          </Link>
-          <Link className="btn btn--ghost" to="/start-a-project">Start a Project</Link>
-        </div>
-      </div>
-    </div>
-    <div className="hero-visual" aria-hidden="true">
-      <img src="/assets/sbd-ai-robot.png" alt="" width="755" height="400" />
-    </div>
-    <div className="container">
-      <div className="hero-highlights reveal">
-        <div className="highlight">
-          <span className="highlight-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3" /></svg></span>
-          <div>
-            <h3>AI &amp; Business Automation</h3>
-            <p>Work smarter with intelligent solutions</p>
+      <section className="hero">
+        <div className="container hero-inner">
+          <div className="hero-copy reveal">
+            <p className="eyebrow">AI &amp; automation partner</p>
+            <h1>
+              Intelligent Technology.
+              <br />
+              <span>Smarter Business.</span>
+            </h1>
+            <p className="lead">
+              SBD AI Solutions helps businesses grow with intelligent AI solutions, professional website
+              development, custom software and business automation.
+            </p>
+            <div className="btn-row">
+              <Link className="btn btn--primary" to="/services">
+                Explore Our Services
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </Link>
+              <Link className="btn btn--ghost" to="/register">
+                Get Started
+              </Link>
+            </div>
+            <ul className="hero-chips">
+              <li>{ICONS.assistant} AI assistants</li>
+              <li>{ICONS.software} Custom software</li>
+              <li>{ICONS.automation} Automation</li>
+            </ul>
           </div>
-        </div>
-        <div className="highlight">
-          <span className="highlight-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m8 8-5 4 5 4M16 8l5 4-5 4" /><path d="m13 5-3 14" /></svg></span>
-          <div>
-            <h3>Custom Software Development</h3>
-            <p>Build solutions for your unique needs</p>
-          </div>
-        </div>
-        <div className="highlight">
-          <span className="highlight-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M7 17h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 3.5 3.5 0 0 0 7 17Z" /><path d="M12 12v6M9.5 14.5 12 12l2.5 2.5" /></svg></span>
-          <div>
-            <h3>Intelligent Digital Solutions</h3>
-            <p>Innovate. Automate. Grow.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <section className="section">
-    <div className="container why-grid">
-      <div className="reveal">
-        <h2 className="section-title">Why Choose <span>SBD AI Solutions?</span></h2>
-        <p className="lead" style={{ marginTop: "14px" }}>We combine innovation, expertise and a customer-first approach to deliver technology solutions that make a difference.</p>
-        <div className="why-list">
-          <div className="why-item">
-            <span className="why-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .8 1.7V16h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0 0 12 3Z" /></svg></span>
-            <div>
-              <h3>Practical Innovation</h3>
-              <p>Real solutions for real business needs.</p>
+          <div className="hero-mock reveal" aria-hidden="true">
+            <div className="mock-window">
+              <div className="mock-bar">
+                <span className="mock-dot" />
+                <span className="mock-dot" />
+                <span className="mock-dot" />
+                <span className="mock-url">app.sbdaisolutions.com/dashboard</span>
+              </div>
+              <div className="mock-body">
+                <div className="mock-rail">
+                  <span className="mock-rail-logo" />
+                  <span className="mock-rail-item is-active" />
+                  <span className="mock-rail-item" />
+                  <span className="mock-rail-item" />
+                  <span className="mock-rail-item" />
+                </div>
+                <div className="mock-main">
+                  <div className="mock-cards">
+                    <div className="mock-card">
+                      <span className="mock-label">AI assistants</span>
+                      <span className="mock-value">Live</span>
+                    </div>
+                    <div className="mock-card">
+                      <span className="mock-label">Conversations</span>
+                      <span className="mock-value">Inbox</span>
+                    </div>
+                    <div className="mock-card">
+                      <span className="mock-label">Leads</span>
+                      <span className="mock-value">Captured</span>
+                    </div>
+                  </div>
+                  <div className="mock-chart">
+                    <span style={{ height: "38%" }} />
+                    <span style={{ height: "62%" }} />
+                    <span style={{ height: "48%" }} />
+                    <span style={{ height: "76%" }} />
+                    <span style={{ height: "58%" }} />
+                    <span style={{ height: "88%" }} />
+                    <span style={{ height: "70%" }} />
+                  </div>
+                  <div className="mock-list">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mock-chat">
+              <div className="mock-chat-head">
+                <span className="mock-chat-avatar">AI</span>
+                <div>
+                  <strong>SBD AI Assistant</strong>
+                  <em>online</em>
+                </div>
+              </div>
+              <p className="mock-bubble">Hi! How can I help your business today?</p>
+              <div className="mock-typing">
+                <i />
+                <i />
+                <i />
+              </div>
             </div>
           </div>
-          <div className="why-item">
-            <span className="why-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg></span>
+        </div>
+      </section>
+
+      <section className="section" id="services">
+        <div className="container">
+          <div className="section-head reveal">
             <div>
-              <h3>Intelligent Automation</h3>
-              <p>Reduce repetitive work and boost efficiency.</p>
+              <p className="eyebrow">What we do</p>
+              <h2 className="section-title">
+                Technology services built around <span>real business needs.</span>
+              </h2>
+            </div>
+            <p className="lead">
+              Ten focused service areas across artificial intelligence, automation and software development.
+              Every engagement is scoped, quoted and delivered in writing.
+            </p>
+          </div>
+
+          <div className="svc-grid">
+            {SERVICE_CARDS.map((service) => (
+              <article className="svc-card reveal" key={service.name}>
+                <span className="svc-icon">{service.icon}</span>
+                <h3>{service.name}</h3>
+                <p>{service.text}</p>
+                <Link className="svc-link" to={service.to}>
+                  Request a Project
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path d="M5 12h14" />
+                    <path d="m13 6 6 6-6 6" />
+                  </svg>
+                </Link>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section section--surface">
+        <div className="container">
+          <div className="platform-band reveal">
+            <div className="platform-copy">
+              <p className="eyebrow eyebrow--light">The SBD AI platform</p>
+              <h2>Your own AI assistants, managed from one dashboard.</h2>
+              <p>
+                Register a business account, configure an assistant with your services and FAQs, install the website
+                chatbot with a single script, then manage conversations, leads and usage as they come in.
+              </p>
+              <div className="btn-row">
+                <Link className="btn btn--light" to="/register">
+                  Explore the AI Platform
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path d="M5 12h14" />
+                    <path d="m13 6 6 6-6 6" />
+                  </svg>
+                </Link>
+                <Link className="btn btn--ghost platform-ghost" to="/login">
+                  Sign in
+                </Link>
+              </div>
+            </div>
+            <ul className="platform-list">
+              <li>{ICONS.assistant} Configure assistants with your business knowledge</li>
+              <li>{ICONS.shield} Keep conversations and visitor details in one place</li>
+              <li>{ICONS.chat} Install the chatbot on any website</li>
+              <li>{ICONS.chart} Monitor usage, credits and subscription limits</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="section" id="project-pricing">
+        <div className="container">
+          <div className="section-head reveal">
+            <div>
+              <p className="eyebrow">Project pricing</p>
+              <h2 className="section-title">
+                Clear starting prices. <span>No surprises.</span>
+              </h2>
+            </div>
+            <p className="lead">
+              These are development starting prices, shown in Naira and US Dollars. They are separate from the
+              monthly AI platform subscription and are confirmed in a written quotation.
+            </p>
+          </div>
+
+          <div className="price-strip reveal">
+            {PRICE_ROWS.map((row) => (
+              <Link className="price-row" key={row.slug} to={`/pricing#pricing`}>
+                <span className="price-row-name">{row.name}</span>
+                <span className="price-row-amount">
+                  <strong>{currency(row.ngn)}</strong>
+                  <em>${row.usd.toLocaleString("en-US")}</em>
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          <div className="price-strip-actions reveal">
+            <Link className="btn btn--primary" to="/pricing">
+              See full project pricing
+            </Link>
+            <Link className="btn btn--outline" to="/start-a-project">
+              Request a quotation
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="section section--surface">
+        <div className="container">
+          <div className="section-head reveal">
+            <div>
+              <p className="eyebrow">How we work</p>
+              <h2 className="section-title">
+                A clear process, from first call to <span>handover.</span>
+              </h2>
+            </div>
+            <p className="lead">Five stages, every time. You always know what happens next.</p>
+          </div>
+
+          <ol className="process-rail">
+            {PROCESS.map((step, index) => (
+              <li className="process-step reveal" key={step.title}>
+                <span className="process-number">{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h3>{step.title}</h3>
+                  <p>{step.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="container">
+          <div className="section-head reveal">
+            <div>
+              <p className="eyebrow">Our work</p>
+              <h2 className="section-title">
+                Real projects, <span>reported honestly.</span>
+              </h2>
+            </div>
+            <p className="lead">
+              We only publish work that exists. Nothing here is described as finished until it has been built and
+              tested.
+            </p>
+          </div>
+
+          <div className="work-grid">
+            <article className="work-card reveal">
+              <span className="work-tag">Prototype</span>
+              <h3>UNSOCIALS</h3>
+              <p>
+                A social platform concept currently in development. Public features and screenshots will be published
+                once the build is ready for demonstration.
+              </p>
+              <Link className="svc-link" to="/projects">
+                View project status
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </Link>
+            </article>
+            <article className="work-card reveal">
+              <span className="work-tag">In planning</span>
+              <h3>SBD AI Assistant platform</h3>
+              <p>
+                The platform behind the website chatbot: assistants, training content, conversations and usage
+                tracking. It is available to early customers and improved continuously.
+              </p>
+              <Link className="svc-link" to="/register">
+                Open the platform
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </Link>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="section cta">
+        <div className="container">
+          <div className="cta-box reveal">
+            <div>
+              <h2>Let&apos;s Build Something Smarter.</h2>
+              <p>
+                Whether you need an AI solution, a professional website or custom business software, SBD AI Solutions
+                can help turn your ideas into practical technology solutions.
+              </p>
+            </div>
+            <div className="cta-actions">
+              <Link className="btn btn--light" to="/start-a-project">
+                Start a Project
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </Link>
+              <Link className="btn btn--ghost cta-ghost" to="/contact">
+                Contact Us
+              </Link>
             </div>
           </div>
-          <div className="why-item">
-            <span className="why-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M2 20h20" /></svg></span>
-            <div>
-              <h3>Custom Development</h3>
-              <p>Technology built around your business.</p>
-            </div>
-          </div>
-          <div className="why-item">
-            <span className="why-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 20h18" /><path d="M6 20v-6M11 20V9M16 20v-9M21 20V5" /></svg></span>
-            <div>
-              <h3>Continuous Improvement</h3>
-              <p>Always evolving for your success.</p>
-            </div>
-          </div>
         </div>
-      </div>
-      <div className="why-media reveal">
-        <img src="/assets/sbd-office-building.png" alt="The SBD AI Solutions office building" width="595" height="190" />
-      </div>
-    </div>
-  </section>
-  <section className="section section--surface">
-    <div className="container">
-      <div className="section-head reveal">
-        <div>
-          <p className="eyebrow">What we do</p>
-          <h2 className="section-title">Services built around <span>real business needs.</span></h2>
-        </div>
-        <p className="lead">Three connected service areas covering intelligent tools, automated operations and the software that ties them together.</p>
-      </div>
-
-      <div className="card-grid">
-        <Link className="card reveal" to="/services#ai-solutions">
-          <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3" /></svg></span>
-          <h3>Artificial Intelligence Solutions</h3>
-          <p>AI customer assistants, intelligent chatbots, AI support systems and custom integrations that handle real conversations.</p>
-          <span className="card-arrow">Learn more</span>
-        </Link>
-        <Link className="card reveal" to="/services#automation">
-          <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></svg></span>
-          <h3>Business Automation &amp; Integration</h3>
-          <p>WhatsApp automation, automated enquiries, workflow and booking automation, and the integrations that connect your tools.</p>
-          <span className="card-arrow">Learn more</span>
-        </Link>
-        <Link className="card reveal" to="/services#software-development">
-          <span className="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m8 8-5 4 5 4M16 8l5 4-5 4" /><path d="m13 5-3 14" /></svg></span>
-          <h3>Custom Software Development</h3>
-          <p>Corporate websites, e-commerce platforms, custom web applications, dashboards and the databases behind them.</p>
-          <span className="card-arrow">Learn more</span>
-        </Link>
-      </div>
-    </div>
-  </section>
-
-
-  <section className="section section--surface">
-    <div className="container">
-      <div className="section-head reveal">
-        <div>
-          <p className="eyebrow">How we work</p>
-          <h2 className="section-title">A clear process from first call to <span>handover.</span></h2>
-        </div>
-        <p className="lead">No guesswork, no disappearing acts. Every engagement follows the same four stages.</p>
-      </div>
-
-      <div className="steps reveal">
-        <div className="step">
-          <span>01</span>
-          <h3>Discover</h3>
-          <p>A short conversation about the goal, the constraint and what a successful outcome looks like.</p>
-        </div>
-        <div className="step">
-          <span>02</span>
-          <h3>Define</h3>
-          <p>Scope, timeline and cost written down, so everyone knows exactly what is being built.</p>
-        </div>
-        <div className="step">
-          <span>03</span>
-          <h3>Build</h3>
-          <p>Regular progress updates and working previews — you see the product take shape, not just a final bill.</p>
-        </div>
-        <div className="step">
-          <span>04</span>
-          <h3>Support</h3>
-          <p>A clean handover with documentation, plus the option to extend and improve later.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section className="section cta">
-    <div className="container">
-      <div className="cta-box reveal">
-        <div>
-          <h2>Have a project in mind?</h2>
-          <p>Tell us what you want to build, improve or automate. We will come back with a clear view of the options and the next step.</p>
-        </div>
-        <div className="cta-actions">
-          <Link className="btn btn--primary" to="/start-a-project">Start a Project
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
-          </Link>
-          <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">Chat on WhatsApp</a>
-        </div>
-      </div>
-    </div>
-  </section>
+      </section>
     </>
   );
 }

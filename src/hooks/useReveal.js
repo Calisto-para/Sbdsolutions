@@ -25,6 +25,16 @@ export default function useReveal(key) {
     );
 
     items.forEach((item) => observer.observe(item));
-    return () => observer.disconnect();
+
+    /* Safety net: content must never stay hidden if the observer misses an
+       element (very tall sections, restored scroll position, print). */
+    const fallback = window.setTimeout(() => {
+      items.forEach((item) => item.classList.add("is-visible"));
+    }, 2500);
+
+    return () => {
+      window.clearTimeout(fallback);
+      observer.disconnect();
+    };
   }, [key]);
 }

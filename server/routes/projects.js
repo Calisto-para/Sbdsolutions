@@ -1,0 +1,132 @@
+import express from "express";
+import rateLimit from "express-rate-limit";
+import { z } from "zod";
+import { one, query } from "../db.js";
+import { env } from "../env.js";
+import { sendProjectEnquiryEmail } from "../mail.js";
+import { SERVICES, findService, startingPrice } from "../../shared/project-services.js";
+
+/* Public project enquiries. A submission is written to the database first and
+   only then is the notification email attempted: a mail outage must never lose
+   a customer's enquiry. Nothing is charged here — the starting price is shown
+   for context and the final quotation is prepared by an operator. */
+const router = express.Router();
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many enquiries from this connection. Please try again later or message us on WhatsApp." },
+});
+
+const SERVICE_SLUGS = SERVICES.map((service) => service.slug);
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const enquirySchema = z.object({
+  fullName: z.string().trim().min(2, "Enter your full name.").max(120),
+  businessName: z.string().trim().max(160).optional().default(""),
+  email: z
+    .string()
+    .trim()
+    .max(254)
+    .regex(EMAIL, "Enter a valid email address."),
+  phone: z
+    .string()
+    .trim()
+    .min(7, "Enter a phone or WhatsApp number we can reach you on.")
+    .max(40)
+    .refine((value) => value.replace(/\D/g, "").length >= 7, "Enter a valid phone or WhatsApp number."),
+  service: z.enum(SERVICE_SLUGS, { message: "Choose the service you are enquiring about." }),
+  currency: z.enum(["NGN", "USD"], { message: "Choose NGN or USD." }),
+  estimatedBudget: z.string().trim().max(80).optional().default(""),
+  description: z
+    .string()
+    .trim()
+    .min(20, "Describe the project in at least 20 characters.")
+    .max(5000),
+  additionalRequirements: z.string().trim().max(3000).optional().default(""),
+});
+
+router.post("/", limiter, async (req, res, next) => {
+  try {
+    const body = enquirySchema.parse(req.body);
+    const service = findService(body.service);
+    const price = startingPrice(service, body.currency);
+
+    const row = await one(
+      `insert into project_enquiries
+         (full_name, business_name, email, phone, service, currency, estimated_budget,
+          description, additional_requirements, starting_price_amount, starting_price_currency,
+          payment_arrangement, notification_status)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+       returning *`,
+      [
+        body.fullName,
+        body.businessName,
+        body.email.toLowerCase(),
+        body.phone,
+        body.service,
+        body.currency,
+        body.estimatedBudget,
+        body.description,
+        body.additionalRequirements,
+        price,
+        body.currency,
+        "60% upfront before development begins; 40% before final launch or handover",
+      ]
+    );
+
+    /* From here on the enquiry is safely stored. An email problem is recorded
+       and reported to the visitor, but never turns a saved enquiry into a
+       failed submission. */
+    let delivered = false;
+    let notificationError = "";
+    try {
+      const result = await sendProjectEnquiryEmail(
+        {
+          ...row,
+          serviceName: service.name,
+          startingPrice: price,
+        },
+        env.projectEnquiryEmail
+      );
+      delivered = Boolean(result.delivered);
+      notificationError = delivered
+        ? ""
+        : result.failures?.join(" | ") || (!result.provider && "No email provider is configured.") || "Email was not delivered.";
+    } catch (error) {
+      notificationError = error.message || "Email was not delivered.";
+    }
+
+    await query(
+      `update project_enquiries
+          set notification_status = $2,
+              notification_error = $3,
+              updated_at = now()
+        where id = $1`,
+      [row.id, delivered ? "sent" : "failed", notificationError]
+    );
+
+    const reference = `SBD-${String(row.id).slice(0, 8).toUpperCase()}`;
+    res.status(201).json({
+      ok: true,
+      enquiryId: row.id,
+      reference,
+      service: service.name,
+      startingPrice: { amount: price, currency: body.currency },
+      notification: {
+        delivered,
+        message: delivered
+          ? "The team has been notified by email."
+          : "The enquiry was saved, but the notification email could not be delivered. The team can still see it in the dashboard.",
+      },
+      message:
+        "Your enquiry has been saved. SBD Solutions will review it and send a final quotation before any payment is requested.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

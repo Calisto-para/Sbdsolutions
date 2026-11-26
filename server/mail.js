@@ -136,6 +136,73 @@ export async function sendTestEmail(to) {
   return send({ to, subject, text, html, link: "" });
 }
 
+/* Notification to the business inbox when a project enquiry is submitted. The
+   enquiry is already stored before this runs, so a failure here never loses it. */
+export function sendProjectEnquiryEmail(enquiry, to) {
+  const escape = (value) =>
+    String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const currency = enquiry.starting_price_currency || enquiry.currency;
+  const price =
+    currency === "NGN"
+      ? `NGN ${Number(enquiry.starting_price_amount || 0).toLocaleString("en-NG")}`
+      : `USD ${Number(enquiry.starting_price_amount || 0).toLocaleString("en-US")}`;
+  const reference = `SBD-${String(enquiry.id).slice(0, 8).toUpperCase()}`;
+  const subject = `New project enquiry — ${enquiry.serviceName} (${reference})`;
+
+  const lines = [
+    [`Reference`, reference],
+    [`Service`, enquiry.serviceName],
+    [`Starting price shown`, price],
+    [`Preferred currency`, enquiry.currency],
+    [`Full name`, enquiry.full_name],
+    [`Business name`, enquiry.business_name || "—"],
+    [`Email`, enquiry.email],
+    [`Phone / WhatsApp`, enquiry.phone],
+    [`Estimated budget`, enquiry.estimated_budget || "—"],
+    [`Submitted`, new Date(enquiry.created_at).toLocaleString("en-GB")],
+  ];
+  const text = [
+    "A new project enquiry was submitted on the SBD Solutions website.",
+    "",
+    ...lines.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Project description:",
+    enquiry.description,
+    "",
+    "Additional requirements:",
+    enquiry.additional_requirements || "—",
+    "",
+    "The starting price is a development fee estimate, not a final quotation. Review the enquiry, prepare a quotation and send it to the customer before any payment is requested.",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#0b1220">
+      <h2 style="color:#0b1f3f;margin-bottom:4px">New project enquiry</h2>
+      <p style="color:#5b6675;margin-top:0">${escape(reference)} · ${escape(enquiry.serviceName)}</p>
+      <table style="width:100%;border-collapse:collapse;margin:18px 0">
+        ${lines
+          .map(
+            ([label, value]) =>
+              `<tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675;width:42%">${escape(label)}</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escape(value)}</td></tr>`
+          )
+          .join("")}
+      </table>
+      <h3 style="color:#0b1f3f">Project description</h3>
+      <p style="white-space:pre-wrap;line-height:1.6">${escape(enquiry.description)}</p>
+      <h3 style="color:#0b1f3f">Additional requirements</h3>
+      <p style="white-space:pre-wrap;line-height:1.6">${escape(enquiry.additional_requirements) || "—"}</p>
+      <p style="font-size:13px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
+        The starting price is a development fee estimate, not a final quotation. Prepare and send a written quotation before requesting any payment. Third-party costs such as domain, hosting and API usage are separate.
+      </p>
+    </div>`;
+
+  return send({ to, subject, text, html, link: "" });
+}
+
 export function sendVerificationEmail(user, link) {
   const subject = "Verify your SBD AI Solutions account";
   const text = [

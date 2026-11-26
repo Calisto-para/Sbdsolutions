@@ -254,3 +254,8 @@ alter table project_enquiries add column if not exists notification_status text 
 alter table project_enquiries add column if not exists notification_error text default '';
 create index if not exists project_enquiries_user_idx on project_enquiries (user_id, created_at desc);
 create index if not exists project_enquiries_status_idx on project_enquiries (status, created_at desc);
+
+/* The price shown to the visitor is recorded with the enquiry so a later price
+   change never rewrites what they were quoted. */
+alter table project_enquiries add column if not exists starting_price_amount numeric(12, 2);
+alter table project_enquiries add column if not exists starting_price_currency text;

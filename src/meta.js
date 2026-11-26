@@ -13,6 +13,11 @@ export const META = {
     description:
       "Artificial intelligence, business automation and custom software development from SBD AI Solutions — practical technology built around how your business actually runs.",
   },
+  "/pricing": {
+    title: "Project Pricing | SBD AI Solutions",
+    description:
+      "Transparent starting prices for websites, e-commerce, custom web applications, business systems, AI chatbots and automation from SBD AI Solutions, in Naira and US Dollars.",
+  },
   "/projects": {
     title: "Projects | SBD AI Solutions",
     description:

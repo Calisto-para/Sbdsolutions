@@ -16,6 +16,7 @@
   var config = null;
   var polling = null;
   var busy = false;
+  var typing = null;
 
   try {
     conversationId = sessionStorage.getItem(storeKey) || "";
@@ -66,6 +67,10 @@
     ".sbdw-msg--ai{background:#fff;color:#0b1f3a;border:1px solid #e3ebfa;align-self:flex-start}",
     ".sbdw-msg--visitor{background:#0b5cff;color:#fff;align-self:flex-end}",
     ".sbdw-msg--team{background:#0b1f3a;color:#fff;align-self:flex-start}",
+    ".sbdw-typing{display:inline-flex;align-items:center;gap:4px;min-height:18px}",
+    ".sbdw-typing span{width:6px;height:6px;border-radius:50%;background:#7c8aa3;animation:sbdw-typing 1.2s infinite ease-in-out}",
+    ".sbdw-typing span:nth-child(2){animation-delay:.15s}.sbdw-typing span:nth-child(3){animation-delay:.3s}",
+    "@keyframes sbdw-typing{0%,80%,100%{transform:translateY(0);opacity:.45}40%{transform:translateY(-4px);opacity:1}}",
     ".sbdw-note{font-size:12px;color:#40506b;align-self:center;text-align:center}",
     ".sbdw-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e6eefb;background:#fff}",
     ".sbdw-input{flex:1;border:1px solid #cfdcf3;border-radius:10px;padding:9px 11px;font:inherit;min-width:0}",
@@ -168,6 +173,23 @@
     log.scrollTop = log.scrollHeight;
   }
 
+  /* Three animated dots while the assistant is thinking, so a slow reply never
+     looks like nothing happened. */
+  function showTyping() {
+    if (typing) return;
+    typing = el("div", "sbdw-msg sbdw-msg--ai sbdw-typing");
+    typing.setAttribute("aria-label", "Assistant is typing");
+    typing.innerHTML = "<span></span><span></span><span></span>";
+    log.appendChild(typing);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function hideTyping() {
+    if (!typing) return;
+    if (typing.parentNode) typing.parentNode.removeChild(typing);
+    typing = null;
+  }
+
   function paint() {
     var bg = config.color || "#0b5cff";
     var fg = textColor(bg);
@@ -230,15 +252,18 @@
     var message = input.value.trim();
     if (!message || busy) return;
     busy = true;
+    send.disabled = true;
     setStatus("");
     input.value = "";
     addMessage({ role: "user", content: message }, null);
+    showTyping();
 
     post("/api/widget/" + key + "/chat", {
       message: message,
       conversationId: conversationId || undefined,
     })
       .then(function (data) {
+        hideTyping();
         saveConversation(data.conversationId);
         if (data.reply) addMessage({ role: "assistant", author: "ai", content: data.reply }, null);
         if (data.takeover) {
@@ -247,11 +272,13 @@
         }
       })
       .catch(function (error) {
+        hideTyping();
         setStatus(error.message);
         addNote("Your message was not delivered.");
       })
       .then(function () {
         busy = false;
+        send.disabled = false;
       });
   });
 

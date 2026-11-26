@@ -215,3 +215,46 @@ create index if not exists conversations_user_idx on conversations (user_id, upd
 create index if not exists messages_conversation_idx on messages (conversation_id, created_at);
 create index if not exists conversations_status_idx on conversations (user_id, status, updated_at desc);
 create index if not exists messages_author_idx on messages (conversation_id, created_at);
+
+/* Widget visitors are identified by a random browser id, so one business can
+   never read another business's chats. */
+alter table conversations add column if not exists visitor_id text not null default '';
+create index if not exists conversations_visitor_idx on conversations (user_id, visitor_id, created_at desc);
+alter table subscriptions add column if not exists period_start_at timestamptz not null default now();
+
+/* Project quotations are separate from subscription payments and are never
+   charged automatically when an enquiry is submitted. */
+create table if not exists project_enquiries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references users(id) on delete set null,
+  full_name text not null,
+  business_name text default '',
+  email text not null,
+  phone text not null,
+  country text default '',
+  service text not null,
+  currency text not null check (currency in ('NGN', 'USD')),
+  estimated_budget text default '',
+  description text not null,
+  additional_requirements text default '',
+  status text not null default 'New',
+  quotation_amount numeric(12, 2),
+  quotation_currency text check (quotation_currency in ('NGN', 'USD')),
+  included_services text default '',
+  cost_lines jsonb not null default '[]'::jsonb,
+  payment_arrangement text default '',
+  payment_status text not null default 'Unpaid',
+  payment_reference text default '',
+  history jsonb not null default '[]'::jsonb,
+  notification_status text not null default 'pending',
+  notification_error text default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table project_enquiries add column if not exists quotation_currency text;
+alter table project_enquiries add column if not exists notification_status text not null default 'pending';
+alter table project_enquiries add column if not exists notification_error text default '';
+alter table project_enquiries add column if not exists starting_price_amount numeric(12, 2);
+alter table project_enquiries add column if not exists starting_price_currency text;
+create index if not exists project_enquiries_user_idx on project_enquiries (user_id, created_at desc);
+create index if not exists project_enquiries_status_idx on project_enquiries (status, created_at desc);

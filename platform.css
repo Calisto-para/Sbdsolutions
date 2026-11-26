@@ -1990,3 +1990,151 @@
 .checkout-bank .admin-facts {
   margin: 0;
 }
+
+/* Project enquiries (operator) -------------------------------------------- */
+.admin-table tbody tr.is-selected td {
+  background: var(--accent-soft);
+}
+
+.project-admin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  align-items: start;
+}
+
+.project-detail {
+  display: grid;
+  gap: 20px;
+}
+
+.project-description {
+  white-space: pre-wrap;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.project-quote-summary {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.project-quote-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.project-quote-summary div:last-child {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.project-quote-summary strong {
+  color: var(--ink);
+}
+
+.cost-lines {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cost-line-row {
+  display: grid;
+  grid-template-columns: 1fr 120px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.cost-line-row input {
+  padding: 8px 10px;
+}
+
+.project-history {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.project-history li {
+  padding: 11px 14px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.project-history strong {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.project-history span {
+  font-size: 0.74rem;
+  color: var(--muted-light);
+}
+
+@media (max-width: 1000px) {
+  .project-admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .cost-line-row {
+    grid-template-columns: 1fr 92px;
+  }
+
+  .cost-line-row .panel-link {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+/* AI typing indicator ----------------------------------------------------- */
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 1.3em;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7c8aa3;
+  animation: sbd-typing 1.2s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes sbd-typing {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}

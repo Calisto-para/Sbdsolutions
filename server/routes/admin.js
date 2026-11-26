@@ -5,6 +5,7 @@ import { requireAdmin, publicUser } from "../auth.js";
 import { mailDiagnostics } from "../mail-check.js";
 import { sendTestEmail } from "../mail.js";
 import { activatePayment, paymentView } from "../payments.js";
+import { findService, startingPrice } from "../../shared/project-services.js";
 
 /* Operator area. Every route is admin-only and answers 404 to anyone else, so
    the area is invisible to clients. */
@@ -495,6 +496,181 @@ router.get("/conversations", async (req, res, next) => {
         updatedAt: row.updated_at,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- project enquiries and quotations ---------- */
+
+const PROJECT_STATUSES = ["New", "Reviewing", "Quoted", "Approved", "Rejected", "Completed"];
+const PROJECT_PAYMENT_STATUSES = ["Unpaid", "Deposit paid", "Part paid", "Paid", "Refunded"];
+
+const projectApi = (row) => {
+  const service = findService(row.service);
+  const fallbackPrice = service ? startingPrice(service, row.starting_price_currency || row.currency) : 0;
+  return {
+    id: row.id,
+    reference: `SBD-${String(row.id).slice(0, 8).toUpperCase()}`,
+    fullName: row.full_name,
+    businessName: row.business_name || "",
+    email: row.email,
+    phone: row.phone,
+    service: row.service,
+    serviceName: service?.name || row.service,
+    currency: row.currency,
+    startingPrice: {
+      amount: Number(row.starting_price_amount ?? fallbackPrice) || 0,
+      currency: row.starting_price_currency || row.currency,
+    },
+    estimatedBudget: row.estimated_budget || "",
+    description: row.description,
+    additionalRequirements: row.additional_requirements || "",
+    status: row.status,
+    quotationAmount: row.quotation_amount === null ? null : Number(row.quotation_amount),
+    quotationCurrency: row.quotation_currency || row.currency,
+    includedServices: row.included_services || "",
+    costLines: Array.isArray(row.cost_lines) ? row.cost_lines : [],
+    paymentArrangement: row.payment_arrangement || "",
+    paymentStatus: row.payment_status || "Unpaid",
+    paymentReference: row.payment_reference || "",
+    history: Array.isArray(row.history) ? row.history : [],
+    notificationStatus: row.notification_status || "pending",
+    notificationError: row.notification_error || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+router.get("/projects", async (req, res, next) => {
+  try {
+    const status = PROJECT_STATUSES.includes(String(req.query.status)) ? req.query.status : "";
+    const q = searchTerm(req.query.q);
+    const rows = await query(
+      `select * from project_enquiries
+        where ($1 = '' or status = $1)
+          and ($2 = '%%'
+               or full_name ilike $2
+               or business_name ilike $2
+               or email ilike $2
+               or phone ilike $2
+               or service ilike $2)
+        order by created_at desc
+        limit 200`,
+      [status, q]
+    );
+    res.json({ enquiries: rows.map(projectApi), total: rows.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/projects/:id", async (req, res, next) => {
+  try {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const row = await one("select * from project_enquiries where id = $1", [id]);
+    if (!row) return res.status(404).json({ error: "That project enquiry was not found." });
+    res.json({ project: projectApi(row) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const projectPatch = z.object({
+  status: z.enum(PROJECT_STATUSES).optional(),
+  quotationAmount: z.union([z.number().nonnegative(), z.null()]).optional(),
+  quotationCurrency: z.enum(["NGN", "USD"]).nullable().optional(),
+  includedServices: z.string().trim().max(4000).optional(),
+  costLines: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1, "Give every additional cost a label.").max(160),
+        amount: z.number().nonnegative("Costs cannot be negative."),
+      })
+    )
+    .max(20)
+    .optional(),
+  paymentArrangement: z.string().trim().max(1000).optional(),
+  paymentStatus: z.enum(PROJECT_PAYMENT_STATUSES).optional(),
+  paymentReference: z.string().trim().max(160).optional(),
+  note: z.string().trim().max(1000).optional().default(""),
+});
+
+router.patch("/projects/:id", async (req, res, next) => {
+  try {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = projectPatch.parse(req.body);
+    const existing = await one("select * from project_enquiries where id = $1", [id]);
+    if (!existing) return res.status(404).json({ error: "That project enquiry was not found." });
+
+    const changes = [];
+    if (body.status && body.status !== existing.status) {
+      changes.push(`Status changed from ${existing.status} to ${body.status}`);
+    }
+    if (body.quotationAmount !== undefined) {
+      changes.push(
+        body.quotationAmount === null
+          ? "Quotation cleared"
+          : `Quotation set to ${body.quotationCurrency || existing.quotation_currency || existing.currency} ${body.quotationAmount.toFixed(2)}`
+      );
+    }
+    if (body.costLines !== undefined && JSON.stringify(body.costLines) !== JSON.stringify(existing.cost_lines || [])) {
+      changes.push("Additional costs updated");
+    }
+    if (body.includedServices !== undefined && body.includedServices !== (existing.included_services || "")) {
+      changes.push("Included services updated");
+    }
+    if (body.paymentArrangement !== undefined && body.paymentArrangement !== (existing.payment_arrangement || "")) {
+      changes.push("Payment arrangement updated");
+    }
+    if (body.paymentStatus && body.paymentStatus !== existing.payment_status) {
+      changes.push(`Payment status changed from ${existing.payment_status} to ${body.paymentStatus}`);
+    }
+    if (body.paymentReference !== undefined && body.paymentReference !== (existing.payment_reference || "")) {
+      changes.push("Payment reference updated");
+    }
+
+    const history = Array.isArray(existing.history) ? [...existing.history] : [];
+    const note = changes.join(". ");
+    if (note || body.note) {
+      history.push({
+        at: new Date().toISOString(),
+        by: req.user.email,
+        note: [note, body.note].filter(Boolean).join(". "),
+      });
+    }
+
+    const row = await one(
+      `update project_enquiries
+          set status = coalesce($2, status),
+              quotation_amount = $3,
+              quotation_currency = $4,
+              included_services = coalesce($5, included_services),
+              cost_lines = $6,
+              payment_arrangement = coalesce($7, payment_arrangement),
+              payment_status = coalesce($8, payment_status),
+              payment_reference = coalesce($9, payment_reference),
+              history = $10::jsonb,
+              updated_at = now()
+        where id = $1
+        returning *`,
+      [
+        id,
+        body.status ?? null,
+        body.quotationAmount === undefined ? existing.quotation_amount : body.quotationAmount,
+        body.quotationAmount === undefined
+          ? existing.quotation_currency
+          : body.quotationCurrency ?? existing.quotation_currency ?? existing.currency,
+        body.includedServices ?? null,
+        JSON.stringify(body.costLines === undefined ? existing.cost_lines || [] : body.costLines),
+        body.paymentArrangement ?? null,
+        body.paymentStatus ?? null,
+        body.paymentReference ?? null,
+        JSON.stringify(history),
+      ]
+    );
+
+    res.json({ project: projectApi(row), message: "Project enquiry updated." });
   } catch (error) {
     next(error);
   }

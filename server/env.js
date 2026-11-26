@@ -69,6 +69,9 @@ export const env = {
     cachedInputPricePerM:
       Number.parseFloat(process.env.OPENAI_CACHED_INPUT_PRICE_PER_M || ""),
   },
+  /* Where project enquiries are emailed. Falls back to the reply-to address. */
+  projectEnquiryEmail:
+    (process.env.PROJECT_ENQUIRY_EMAIL || process.env.MAIL_REPLY_TO || "sbdiam.solutions@gmail.com").trim(),
   mail: {
     /* brevo | resend | smtp. Empty means: first configured provider wins. */
     provider: (process.env.EMAIL_PROVIDER || "").trim().toLowerCase(),

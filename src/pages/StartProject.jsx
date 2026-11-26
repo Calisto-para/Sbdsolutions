@@ -1,7 +1,13 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import ProjectForm from "../components/ProjectForm";
+import { findService, startingPrice } from "../../shared/project-services";
+import { formatPrice } from "../lib/currency";
 
 export default function StartProject() {
+  const [params] = useSearchParams();
+  const service = findService(params.get("service"));
+  const currency = params.get("currency") === "NGN" ? "NGN" : params.get("currency") === "USD" ? "USD" : "";
+  const price = service ? startingPrice(service, currency || "USD") : null;
   return (
     <>
 <section className="page-hero">
@@ -21,10 +27,20 @@ export default function StartProject() {
   <section className="section">
     <div className="container">
       <div className="form-card form-card--wide reveal">
-        <h2>Project enquiry</h2>
-        <p>The more detail you give, the more useful our first reply will be. Fields marked with an asterisk are required.</p>
+        <h2>{service ? `Project enquiry — ${service.name}` : "Project enquiry"}</h2>
+        <p>
+          The more detail you give, the more useful our first reply will be. Fields marked with an asterisk are
+          required.{" "}
+          {service && currency ? (
+            <>
+              Starting development price for this package: <strong>{formatPrice(price, currency)}</strong>. The final
+              quotation is confirmed after review — nothing is charged now.{" "}
+            </>
+          ) : null}
+          <Link to="/pricing">Compare all project prices</Link>.
+        </p>
 
-        <ProjectForm />
+        <ProjectForm initialService={service?.slug || ""} initialCurrency={currency} />
       </div>
     </div>
   </section>

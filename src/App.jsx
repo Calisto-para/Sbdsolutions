@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import RouteMeta from "./components/RouteMeta";
 import Home from "./pages/Home";
 import Services from "./pages/Services";
+import Pricing from "./pages/Pricing";
 import Projects from "./pages/Projects";
 import About from "./pages/About";
 import Clients from "./pages/Clients";
@@ -23,6 +24,7 @@ const LEGACY = {
   "/index.html": "/",
   "/src/index.html": "/",
   "/services.html": "/services",
+  "/pricing.html": "/pricing",
   "/projects.html": "/projects",
   "/about.html": "/about",
   "/who-we-help.html": "/who-we-help",
@@ -58,6 +60,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="services" element={<Services />} />
+          <Route path="pricing" element={<Pricing />} />
           <Route path="projects" element={<Projects />} />
           <Route path="about" element={<About />} />
           <Route path="who-we-help" element={<Clients />} />

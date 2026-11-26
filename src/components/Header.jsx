@@ -113,6 +113,7 @@ export default function Header() {
               ))}
             </div>
           </details>
+          <Link to="/pricing" {...linkProps(pathname === "/pricing")}>Pricing</Link>
           <Link to="/projects" {...linkProps(pathname === "/projects")}>Projects</Link>
           <Link to="/about" {...linkProps(pathname === "/about")}>About Us</Link>
           <details className="nav-drop" ref={(node) => (dropRefs.current[1] = node)} onToggle={(e) => handleToggle(1, e)}>

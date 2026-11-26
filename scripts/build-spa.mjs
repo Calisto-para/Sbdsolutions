@@ -10,6 +10,7 @@ const ROOT = process.cwd();
 
 const LEGACY_PAGES = [
   "services",
+  "pricing",
   "projects",
   "about",
   "who-we-help",

@@ -409,7 +409,14 @@ function TestChat({ assistant, conversations, reloadConversations, setError, onE
             </div>
           ))}
 
-          {busy ? <div className="chat-msg chat-msg--assistant"><span className="chat-role">{assistant.name}</span><p>Thinking…</p></div> : null}
+          {busy ? (
+            <div className="chat-msg chat-msg--assistant" aria-live="polite">
+              <span className="chat-role">{assistant.name}</span>
+              <p className="typing-dots" aria-label={`${assistant.name} is thinking`}>
+                <span /><span /><span />
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {notice ? <div className="form-alert form-alert--error">{notice}</div> : null}

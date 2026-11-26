@@ -18,6 +18,7 @@ import adminRoutes from "./routes/admin.js";
 import widgetRoutes from "./routes/widget.js";
 import subscriptionRoutes from "./routes/subscriptions.js";
 import leadRoutes from "./routes/leads.js";
+import projectRoutes from "./routes/projects.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -108,6 +109,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/widget", widgetRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/leads", leadRoutes);
+app.use("/api/projects", projectRoutes);
 
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "Endpoint not found." });

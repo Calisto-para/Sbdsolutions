@@ -20,6 +20,7 @@ export default function Footer() {
             <h3>Company</h3>
             <Link to="/about">About Us</Link>
             <Link to="/projects">Projects</Link>
+            <Link to="/pricing">Project pricing</Link>
             <Link to="/who-we-help">Who We Help</Link>
             <Link to="/contact">Contact</Link>
           </div>
@@ -29,6 +30,7 @@ export default function Footer() {
             <Link to="/services#automation">Business Automation</Link>
             <Link to="/services#software-development">Software Development</Link>
             <Link to="/services#software-development">Web Development</Link>
+            <Link to="/pricing">Project pricing</Link>
           </div>
           <div className="footer-col">
             <h3>Contact</h3>

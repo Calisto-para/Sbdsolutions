@@ -17,6 +17,7 @@
   var polling = null;
   var busy = false;
   var typing = null;
+  var resolvedNoted = false;
 
   try {
     conversationId = sessionStorage.getItem(storeKey) || "";
@@ -26,6 +27,7 @@
 
   function saveConversation(id) {
     conversationId = id;
+    resolvedNoted = false;
     try {
       sessionStorage.setItem(storeKey, id);
     } catch (error) {
@@ -82,6 +84,8 @@
     ".sbdw-details input{border:1px solid #cfdcf3;border-radius:8px;padding:7px 9px;font:inherit}",
     ".sbdw-details button{border:0;border-radius:8px;padding:8px;font:inherit;font-weight:600;cursor:pointer}",
     ".sbdw-status{font-size:12px;color:#b42318;padding:0 14px 8px}",
+    ".sbdw-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}",
+    ".sbdw-foot{flex-wrap:wrap}",
   ].join("");
 
   var root = el("div", "sbdw-root sbdw-root--right");
@@ -138,10 +142,19 @@
   });
 
   var foot = el("div", "sbdw-foot");
+  var actions = el("div", "sbdw-actions");
   var detailsLink = el("button", "sbdw-link", "Leave my details");
   detailsLink.type = "button";
+  var newChatLink = el("button", "sbdw-link", "New chat");
+  newChatLink.type = "button";
+  var endChatLink = el("button", "sbdw-link", "End chat");
+  endChatLink.type = "button";
+  endChatLink.style.display = "none";
+  actions.appendChild(detailsLink);
+  actions.appendChild(newChatLink);
+  actions.appendChild(endChatLink);
   var powered = el("span", "", "SBD AI Solutions");
-  foot.appendChild(detailsLink);
+  foot.appendChild(actions);
   foot.appendChild(powered);
 
   panel.appendChild(head);
@@ -202,9 +215,39 @@
     dSend.style.background = bg;
     dSend.style.color = fg;
     detailsLink.style.color = bg;
+    newChatLink.style.color = bg;
+    endChatLink.style.color = bg;
     title.textContent = config.name;
     subtitle.textContent = config.businessName ? config.businessName : "Ask us anything";
     root.className = "sbdw-root sbdw-root--" + (config.position === "left" ? "left" : "right");
+  }
+
+  function stopPoll() {
+    if (polling) {
+      clearInterval(polling);
+      polling = null;
+    }
+  }
+
+  function showEndButton() {
+    endChatLink.style.display = conversationId ? "inline" : "none";
+  }
+
+  /* Clear the conversation on this device and start from the welcome message. */
+  function resetChat(note) {
+    stopPoll();
+    conversationId = "";
+    lastMessageIds = {};
+    try {
+      sessionStorage.removeItem(storeKey);
+    } catch (error) {
+      /* private browsing */
+    }
+    log.innerHTML = "";
+    addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage }, null);
+    if (note) addNote(note);
+    showEndButton();
+    setStatus("");
   }
 
   function showPanel() {
@@ -214,6 +257,7 @@
     if (!log.childNodes.length) {
       addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage }, null);
     }
+    showEndButton();
     input.focus();
     if (conversationId) poll();
   }
@@ -232,6 +276,39 @@
 
   detailsLink.addEventListener("click", function () {
     details.className = details.className.indexOf("is-open") >= 0 ? "sbdw-details" : "sbdw-details is-open";
+  });
+
+  newChatLink.addEventListener("click", function () {
+    /* Close the previous conversation in the dashboard, then start fresh. */
+    if (conversationId) {
+      var previous = conversationId;
+      fetch(base + "/api/widget/" + key + "/conversation/" + previous + "/end", { method: "POST" }).catch(
+        function () {}
+      );
+    }
+    resetChat("Started a new conversation.");
+    input.focus();
+  });
+
+  endChatLink.addEventListener("click", function () {
+    if (!conversationId) {
+      resetChat("Conversation ended. Thank you for chatting.");
+      return;
+    }
+    var id = conversationId;
+    endChatLink.disabled = true;
+    setStatus("");
+    fetch(base + "/api/widget/" + key + "/conversation/" + id + "/end", { method: "POST" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("Could not end the chat right now.");
+        resetChat("Conversation ended — thank you for chatting with us.");
+      })
+      .catch(function (error) {
+        setStatus(error.message);
+      })
+      .then(function () {
+        endChatLink.disabled = false;
+      });
   });
 
   function post(path, body) {
@@ -265,7 +342,13 @@
       .then(function (data) {
         hideTyping();
         saveConversation(data.conversationId);
-        if (data.reply) addMessage({ role: "assistant", author: "ai", content: data.reply }, null);
+        showEndButton();
+        if (data.reply) {
+          addMessage(
+            { role: "assistant", author: "ai", content: data.reply },
+            data.assistantMessageId || null
+          );
+        }
         if (data.confirmationSent) {
           addNote("We emailed you a confirmation — your message has reached the team.");
         }
@@ -299,6 +382,7 @@
     })
       .then(function (data) {
         saveConversation(data.conversationId);
+        showEndButton();
         addNote(
           data.confirmationSent
             ? "Thank you — the team has your details and we emailed you a confirmation."
@@ -329,7 +413,11 @@
               addMessage(message, message.id);
             }
           });
-          if (data.status === "resolved") addNote("This conversation was marked resolved.");
+          if (data.status === "resolved" && !resolvedNoted) {
+            resolvedNoted = true;
+            addNote("This conversation was marked resolved. Start a new chat any time.");
+            stopPoll();
+          }
         })
         .catch(function () {});
     }, 6000);

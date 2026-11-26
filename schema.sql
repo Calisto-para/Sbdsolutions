@@ -119,6 +119,11 @@ create table if not exists leads (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+/* Chat notification tracking: one email per new website conversation. */
+alter table conversations add column if not exists notified_at timestamptz;
+alter table conversations add column if not exists notification_status text not null default '';
+alter table conversations add column if not exists notification_error text not null default '';
+
 /* Lead notification tracking: one owner alert and one visitor confirmation per lead. */
 alter table leads add column if not exists notified_at timestamptz;
 alter table leads add column if not exists acknowledged_at timestamptz;

@@ -4,7 +4,12 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
 import { messageAllowanceError, requireActiveAiAccount } from "../plans.js";
-import { sendChatLeadAcknowledgementEmail, sendChatLeadEmail } from "../mail.js";
+import { env } from "../env.js";
+import {
+  sendChatLeadAcknowledgementEmail,
+  sendChatLeadEmail,
+  sendChatStartedEmail,
+} from "../mail.js";
 
 /* Public chatbot endpoints used by the embeddable widget. There is no session
    here: the assistant's public key identifies the business, and a conversation
@@ -168,8 +173,8 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       ],
     });
 
-    await query(
-      "insert into messages (conversation_id, role, content, author) values ($1, 'assistant', $2, 'ai')",
+    const assistantMessage = await one(
+      "insert into messages (conversation_id, role, content, author) values ($1, 'assistant', $2, 'ai') returning id",
       [conversation.id, result.text]
     );
 
@@ -177,11 +182,16 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
 
     const lead = await saveLead(assistant, conversation, details);
     const notified = lead ? await notifyLead(assistant, conversation) : { alerted: false, acknowledged: false };
+    /* A lead alert already carries this conversation; otherwise email the owner
+       on the first message so nothing lives only in the dashboard. */
+    const started = notified.alerted ? true : await notifyChatStarted(assistant, conversation);
     res.json({
       conversationId: conversation.id,
+      assistantMessageId: assistantMessage?.id || null,
       reply: result.text,
       leadCaptured: lead,
       leadAlerted: notified.alerted,
+      chatEmailed: started,
       confirmationSent: notified.acknowledged,
     });
   } catch (error) {
@@ -229,41 +239,101 @@ async function saveLead(assistant, conversation, details) {
 /* The chat collected a visitor's details: alert the assistant owner at their
    main email address and confirm to the visitor that the message arrived.
    Both emails are sent once per lead, and a mail failure never breaks the chat. */
+/* Who receives chat notifications: the business support address, then the
+   owner's account email, then the platform inbox as a last resort. */
+async function ownerRecipients(assistant) {
+  const owner = await one(
+    `select u.email, u.full_name, b.name as business_name, b.support_email
+       from users u
+       left join businesses b on b.user_id = u.id
+      where u.id = $1`,
+    [assistant.user_id]
+  );
+  const primary = String(owner?.support_email || owner?.email || "").trim();
+  const fallback = String(env.projectEnquiryEmail || "").trim();
+  const to = primary || fallback;
+  return {
+    to: to ? [to] : [],
+    businessName: owner?.business_name || owner?.full_name || "",
+  };
+}
+
+async function transcriptFor(conversationId) {
+  const messages = await query(
+    `select role, author, content from messages
+      where conversation_id = $1
+      order by created_at asc
+      limit 20`,
+    [conversationId]
+  );
+  return messages
+    .map((row) => {
+      const who = row.author === "team" ? "Team" : row.role === "user" ? "Visitor" : "Assistant";
+      return `${who}: ${row.content}`;
+    })
+    .join("\n")
+    .slice(0, 4000);
+}
+
+/* First message of a conversation: email the owner even without contact
+   details, so a chat never exists only inside the dashboard. */
+async function notifyChatStarted(assistant, conversation) {
+  try {
+    if (conversation.notified_at) return false;
+    const { to, businessName } = await ownerRecipients(assistant);
+    if (!to.length) return false;
+
+    const transcript = await transcriptFor(conversation.id);
+    const reference = `CHAT-${String(conversation.id).slice(0, 8).toUpperCase()}`;
+    const sent = await sendChatStartedEmail(
+      {
+        assistantName: assistant.name,
+        businessName,
+        reference,
+        visitor: {
+          name: conversation.visitor_name || "",
+          email: conversation.visitor_email || "",
+          phone: conversation.visitor_phone || "",
+        },
+        transcript,
+      },
+      to
+    );
+
+    await query(
+      `update conversations
+          set notified_at = now(),
+              notification_status = $2,
+              notification_error = $3
+        where id = $1`,
+      [
+        conversation.id,
+        sent?.delivered ? "sent" : "failed",
+        sent?.delivered ? "" : String((sent?.failures || []).join(" | ")).slice(0, 500),
+      ]
+    );
+    return Boolean(sent?.delivered);
+  } catch (error) {
+    console.error(`[widget] chat notification failed for ${conversation.id} — ${error.message}`);
+    return false;
+  }
+}
+
 async function notifyLead(assistant, conversation) {
   const result = { alerted: false, acknowledged: false };
   try {
     const lead = await one("select * from leads where conversation_id = $1", [conversation.id]);
     if (!lead || (!lead.email && !lead.phone)) return result;
 
-    const owner = await one(
-      `select u.email, u.full_name, b.name as business_name, b.support_email
-         from users u
-         left join businesses b on b.user_id = u.id
-        where u.id = $1`,
-      [assistant.user_id]
-    );
-    const ownerEmail = String(owner?.support_email || owner?.email || "").trim();
-    const businessName = owner?.business_name || owner?.full_name || "";
+    const { to, businessName } = await ownerRecipients(assistant);
+    if (!to.length) return result;
 
-    const messages = await query(
-      `select role, author, content from messages
-        where conversation_id = $1
-        order by created_at asc
-        limit 20`,
-      [conversation.id]
-    );
-    const transcript = messages
-      .map((row) => {
-        const who = row.author === "team" ? "Team" : row.role === "user" ? "Visitor" : "Assistant";
-        return `${who}: ${row.content}`;
-      })
-      .join("\n")
-      .slice(0, 4000);
+    const transcript = await transcriptFor(conversation.id);
 
-    if (!lead.notified_at && ownerEmail) {
+    if (!lead.notified_at) {
       const sent = await sendChatLeadEmail(
         { lead, assistantName: assistant.name, businessName, transcript },
-        ownerEmail
+        to
       );
       result.alerted = Boolean(sent?.delivered);
       await query(
@@ -353,6 +423,30 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
         ? "Thank you — your details are with the team and a confirmation is on its way to your inbox."
         : "Thank you — your details are with the team.",
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* The visitor can end the conversation themselves. It is kept in the dashboard
+   as resolved history; the visitor then starts a fresh conversation. */
+router.post("/:key/conversation/:id/end", limiter, async (req, res, next) => {
+  try {
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+
+    const conversation = await one(
+      "select * from conversations where id = $1 and assistant_id = $2 and channel = 'widget'",
+      [req.params.id, assistant.id]
+    );
+    if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+
+    await query(
+      "update conversations set status = 'resolved', updated_at = now() where id = $1",
+      [conversation.id]
+    );
+
+    res.json({ ok: true, status: "resolved" });
   } catch (error) {
     next(error);
   }

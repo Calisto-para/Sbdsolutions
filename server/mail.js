@@ -18,6 +18,8 @@ function parseFrom(value) {
 
 const from = parseFrom(env.mail.from);
 
+const toList = (to) => (Array.isArray(to) ? to : [to]).filter(Boolean);
+
 let smtpTransport = null;
 function smtp() {
   if (!smtpTransport) {
@@ -53,7 +55,7 @@ async function sendWithBrevo({ to, subject, text, html, replyTo }) {
     { "api-key": env.mail.brevo.apiKey },
     {
       sender: { name: from.name, email: from.email },
-      to: [{ email: to }],
+      to: toList(to).map((address) => ({ email: address })),
       ...(reply ? { replyTo: { email: reply } } : {}),
       subject,
       htmlContent: html,
@@ -70,7 +72,7 @@ async function sendWithResend({ to, subject, text, html, replyTo }) {
     { authorization: `Bearer ${env.mail.resend.apiKey}` },
     {
       from: from.formatted,
-      to: [to],
+      to: toList(to),
       ...(reply ? { reply_to: reply } : {}),
       subject,
       html,
@@ -82,7 +84,7 @@ async function sendWithResend({ to, subject, text, html, replyTo }) {
 async function sendWithSmtp({ to, subject, text, html, replyTo }) {
   await smtp().sendMail({
     from: from.formatted,
-    to,
+    to: toList(to),
     subject,
     text,
     html,
@@ -122,10 +124,11 @@ async function send({ to, subject, text, html, link, replyTo }) {
   }
 
   const failures = [];
+  const recipients = toList(to);
   for (const name of order) {
     try {
-      await SENDERS[name]({ to, subject, text, html, replyTo });
-      console.log(`[mail] "${subject}" delivered to ${to} via ${name}`);
+      await SENDERS[name]({ to: recipients, subject, text, html, replyTo });
+      console.log(`[mail] "${subject}" delivered to ${recipients.join(", ")} via ${name}`);
       return { delivered: true, provider: name };
     } catch (error) {
       failures.push(`${name}: ${error.message}`);
@@ -271,6 +274,54 @@ export function sendChatLeadEmail({ lead, assistantName, businessName, transcrip
     </div>`;
 
   return send({ to, subject, text, html, link: "", replyTo: lead.email || undefined });
+}
+
+/* First message of a new website conversation. Sent even when the visitor has
+   not shared contact details yet, so nothing only ever lands in the dashboard. */
+export function sendChatStartedEmail({ assistantName, businessName, visitor, transcript, reference }, to) {
+  const brand = businessName || assistantName || "your website chat";
+  const subject = `New website chat — ${visitor?.name || visitor?.email || "new visitor"} (${reference})`;
+  const lines = [
+    ["Reference", reference],
+    ["Assistant", assistantName || "—"],
+    ["Business", businessName || "—"],
+    ["Visitor name", visitor?.name || "Not given yet"],
+    ["Email", visitor?.email || "Not given yet"],
+    ["Phone / WhatsApp", visitor?.phone || "Not given yet"],
+    ["Started", new Date().toLocaleString("en-GB")],
+  ];
+
+  const text = [
+    `A visitor started a conversation with ${brand}.`,
+    "",
+    ...lines.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Conversation so far:",
+    transcript || "(no messages yet)",
+    "",
+    "Reply to this email to reach the visitor when they have shared an address. The conversation is also in your dashboard.",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#0b1220">
+      <h2 style="color:#0b1f3f;margin-bottom:4px">New website chat</h2>
+      <p style="color:#5b6675;margin-top:0">${escapeHtml(reference)} · ${escapeHtml(assistantName || "AI assistant")}</p>
+      <table style="width:100%;border-collapse:collapse;margin:18px 0">
+        ${lines
+          .map(
+            ([label, value]) =>
+              `<tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675;width:38%">${escapeHtml(label)}</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escapeHtml(value)}</td></tr>`
+          )
+          .join("")}
+      </table>
+      <h3 style="color:#0b1f3f">Conversation</h3>
+      <p style="white-space:pre-wrap;line-height:1.6;background:#f5f8ff;border-radius:8px;padding:12px">${escapeHtml(transcript || "(no messages yet)")}</p>
+      <p style="font-size:13px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
+        The visitor may share their email or phone in a later message; you will get a second email when they do.
+      </p>
+    </div>`;
+
+  return send({ to, subject, text, html, link: "", replyTo: visitor?.email || undefined });
 }
 
 /* Automatic confirmation to the visitor that their message reached the business. */

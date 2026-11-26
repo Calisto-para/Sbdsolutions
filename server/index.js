@@ -119,7 +119,8 @@ app.use("/api", (req, res) => {
 const WIDGET_SCRIPT = path.resolve("server/widget-embed.js");
 app.get("/widget.js", (req, res) => {
   res.type("application/javascript");
-  res.set("Cache-Control", env.isProd ? "public, max-age=300" : "no-store");
+  /* Short cache so widget fixes reach installed sites quickly; revalidate after. */
+  res.set("Cache-Control", env.isProd ? "public, max-age=60, must-revalidate" : "no-store");
   res.set("Access-Control-Allow-Origin", "*");
   res.sendFile(WIDGET_SCRIPT);
 });

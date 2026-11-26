@@ -101,6 +101,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     if (allowance) return res.status(403).json({ error: allowance, code: "PLAN_LIMIT" });
 
     const body = z.object(assistantShape).parse(req.body);
+    const { limit } = await agentUsage(req.user.id);
     const row = await one(
       `insert into assistants
         (user_id, name, business_description, services, products, tone, language, greeting,
@@ -123,6 +124,23 @@ router.post("/", requireAuth, async (req, res, next) => {
         body.welcomeMessage,
       ]
     );
+    /* Two clicks can arrive together, both passing the check above. Keep the
+       oldest agents allowed by the plan and drop this one if it is over the
+       limit, so the account never exceeds its allowance. */
+    const rank = await one(
+      `select count(*)::int as placed from assistants
+        where user_id = $1
+          and (created_at < $2 or (created_at = $2 and id <= $3))`,
+      [req.user.id, row.created_at, row.id]
+    );
+    if (limit <= 0 || Number(rank?.placed || 0) > limit) {
+      await query("delete from assistants where id = $1 and user_id = $2", [row.id, req.user.id]);
+      return res.status(403).json({
+        error: await assistantAllowanceError(req.user.id),
+        code: "PLAN_LIMIT",
+      });
+    }
+
     res.status(201).json({
       assistant: toApi(row),
       limits: await agentUsage(req.user.id),

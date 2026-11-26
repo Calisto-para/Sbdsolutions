@@ -126,6 +126,13 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
         [body.conversationId, assistant.id]
       );
       if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+      /* An ended conversation is history: it is never continued, a new one starts. */
+      if (conversation.status === "resolved") {
+        return res.status(409).json({
+          error: "This conversation has ended. Start a new chat to keep talking with us.",
+          code: "CONVERSATION_ENDED",
+        });
+      }
     }
 
     if (!conversation) {

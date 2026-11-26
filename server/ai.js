@@ -55,6 +55,7 @@ const LEAD_GUIDANCE = [
   "Early in the conversation ask for their name, their email address, their phone number and what service or product they need.",
   "Ask for those details one or two at a time, conversationally, never as a form or a list of questions.",
   "Once you have them, confirm the details back and say the team will follow up.",
+  "When the visitor's question is handled and they have nothing else to ask, briefly suggest they can end the chat with the End chat button at the top of the window, and that they can start a new chat at any time.",
 ];
 
 export function buildSystemPrompt({ assistant, business, knowledge, channel = "dashboard" }) {

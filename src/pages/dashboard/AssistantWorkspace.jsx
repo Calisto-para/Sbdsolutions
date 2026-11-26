@@ -90,6 +90,8 @@ export default function AssistantWorkspace({ assistantId, onBack, onNavigate }) 
 }
 
 function Training({ assistantId, items, reload, setError }) {
+  /* The owner writes their own training title; everything is stored as a
+     business information note. */
   const [form, setForm] = useState({ kind: "note", title: "", content: "" });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -107,7 +109,7 @@ function Training({ assistantId, items, reload, setError }) {
     try {
       const data = await api(`/assistants/${assistantId}/knowledge`, { method: "POST", body: form });
       setNotice(data.message);
-      setForm({ kind: form.kind, title: "", content: "" });
+      setForm({ kind: "note", title: "", content: "" });
       await reload();
     } catch (err) {
       setError(err.message);
@@ -173,20 +175,18 @@ function Training({ assistantId, items, reload, setError }) {
 
         <form className="dash-form" onSubmit={addItem}>
           <div className="form-grid">
-            <div className="field">
-              <label htmlFor="kind">Type</label>
-              <select id="kind" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-                <option value="note">Business information</option>
-                <option value="faq">Frequently asked question</option>
-                <option value="pricing">Price or service detail</option>
-              </select>
-            </div>
-            <div className="field">
+            <div className="field field--full">
               <label htmlFor="kTitle">Title</label>
-              <input id="kTitle" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={form.kind === "faq" ? "How long does delivery take?" : "Opening hours"} />
+              <input
+                id="kTitle"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="Give this training a name, for example Delivery times"
+                maxLength={160}
+              />
             </div>
             <div className="field field--full">
-              <label htmlFor="kContent">{form.kind === "faq" ? "Question and answer" : "Information"}</label>
+              <label htmlFor="kContent">Information</label>
               <textarea id="kContent" rows="5" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required placeholder="Write it the way you would explain it to a customer." />
             </div>
           </div>

@@ -43,6 +43,7 @@ export default function Assistants({ onOpen }) {
 
   async function handleCreate(event) {
     event.preventDefault();
+    if (busy || atLimit) return;
     setBusy(true);
     setError("");
     try {
@@ -61,8 +62,9 @@ export default function Assistants({ onOpen }) {
 
   if (!assistants) return error ? <div className="form-alert form-alert--error">{error}</div> : <div className="dash-loading">Loading assistants…</div>;
 
-  const atLimit = limits ? !limits.canCreate : false;
   const limitPercent = limits ? Math.min(100, Math.round((limits.used / Math.max(1, limits.limit)) * 100)) : 0;
+
+  const atLimit = limits ? !limits.canCreate : false;
 
   return (
     <div className="dash-stack">
@@ -125,7 +127,7 @@ export default function Assistants({ onOpen }) {
         </div>
       ) : null}
 
-      {creating ? (
+      {creating && !atLimit ? (
         <section className="panel panel--form">
           <h3>Create an assistant</h3>
           <p className="panel-note">You can change all of this later.</p>
@@ -169,7 +171,7 @@ export default function Assistants({ onOpen }) {
               </div>
             </div>
             <button className="btn btn--primary" type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create assistant"}
+              {busy ? "Creating…" : "Create AI agent"}
             </button>
           </form>
         </section>

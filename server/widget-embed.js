@@ -10,29 +10,42 @@
 
   var base = script.src ? new URL(script.src).origin : "";
   var storeKey = "sbd-chat-" + key;
+  var historyKey = "sbd-chat-history-" + key;
   var conversationId = "";
-  var lastMessageIds = {};
+  var conversationStatus = "";
+  var viewingId = "";
+  var history = [];
   var open = false;
   var config = null;
   var polling = null;
   var busy = false;
-  var typing = null;
-  var resolvedNoted = false;
+  var typers = 0;
 
-  try {
-    conversationId = sessionStorage.getItem(storeKey) || "";
-  } catch (error) {
-    conversationId = "";
+  function readStorage(name) {
+    try {
+      return sessionStorage.getItem(name) || "";
+    } catch (error) {
+      return "";
+    }
   }
 
-  function saveConversation(id) {
-    conversationId = id;
-    resolvedNoted = false;
+  function writeStorage(name, value) {
     try {
-      sessionStorage.setItem(storeKey, id);
+      if (value) sessionStorage.setItem(name, value);
+      else sessionStorage.removeItem(name);
     } catch (error) {
       /* private browsing — the chat simply starts fresh next time */
     }
+  }
+
+  conversationId = readStorage(storeKey);
+  try {
+    var savedHistory = JSON.parse(readStorage(historyKey) || "[]");
+    history = Array.isArray(savedHistory) ? savedHistory.filter(function (item) {
+      return item && typeof item.id === "string";
+    }) : [];
+  } catch (error) {
+    history = [];
   }
 
   function textColor(hex) {
@@ -58,12 +71,23 @@
     ".sbdw-bubble{width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;box-shadow:0 10px 24px rgba(11,31,58,.24);display:flex;align-items:center;justify-content:center;transition:transform .15s ease}",
     ".sbdw-bubble:hover{transform:scale(1.05)}",
     ".sbdw-bubble svg{width:26px;height:26px}",
-    ".sbdw-panel{position:absolute;bottom:72px;width:340px;max-width:calc(100vw - 32px);height:480px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 18px 48px rgba(11,31,58,.22);display:flex;flex-direction:column;overflow:hidden}",
+    ".sbdw-panel{position:absolute;bottom:72px;width:340px;max-width:calc(100vw - 32px);height:500px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 18px 48px rgba(11,31,58,.22);display:flex;flex-direction:column;overflow:hidden}",
     ".sbdw-root--right .sbdw-panel{right:0}.sbdw-root--left .sbdw-panel{left:0}",
-    ".sbdw-head{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}",
+    ".sbdw-head{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}",
     ".sbdw-title{font-weight:600;font-size:15px;margin:0}",
     ".sbdw-sub{font-size:12px;opacity:.8;display:block}",
     ".sbdw-close{background:transparent;border:0;color:inherit;font-size:20px;line-height:1;cursor:pointer;padding:2px 6px}",
+    ".sbdw-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #e6eefb;background:#fff}",
+    ".sbdw-tool{border:1px solid #cfdcf3;background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;color:#0b5cff}",
+    ".sbdw-tool:hover{background:#f2f7ff}",
+    ".sbdw-tool[disabled]{opacity:.55;cursor:not-allowed}",
+    ".sbdw-tool--primary{color:#fff;border-color:transparent}",
+    ".sbdw-history{display:none;flex-direction:column;gap:6px;padding:10px 12px;background:#fbfdff;border-bottom:1px solid #e6eefb}",
+    ".sbdw-history.is-open{display:flex}",
+    ".sbdw-history-title{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5a6c88}",
+    ".sbdw-history-item{text-align:left;border:1px solid #e3ebfa;background:#fff;border-radius:9px;padding:7px 9px;font:inherit;font-size:12px;cursor:pointer;color:#0b1f3a}",
+    ".sbdw-history-item:hover{border-color:#b9cdf0;background:#f5f9ff}",
+    ".sbdw-history-item span{display:block;color:#5a6c88;font-size:11px}",
     ".sbdw-log{flex:1;overflow-y:auto;padding:14px;background:#f5f8ff;display:flex;flex-direction:column;gap:10px}",
     ".sbdw-msg{max-width:85%;padding:9px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}",
     ".sbdw-msg--ai{background:#fff;color:#0b1f3a;border:1px solid #e3ebfa;align-self:flex-start}",
@@ -76,8 +100,10 @@
     ".sbdw-note{font-size:12px;color:#40506b;align-self:center;text-align:center}",
     ".sbdw-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e6eefb;background:#fff}",
     ".sbdw-input{flex:1;border:1px solid #cfdcf3;border-radius:10px;padding:9px 11px;font:inherit;min-width:0}",
+    ".sbdw-input[disabled]{background:#f4f7fc;color:#7c8aa3}",
     ".sbdw-send{border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}",
-    ".sbdw-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid #eef3fc;background:#fff;font-size:11px;color:#5a6c88}",
+    ".sbdw-send[disabled]{opacity:.6;cursor:not-allowed}",
+    ".sbdw-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid #eef3fc;background:#fff;font-size:11px;color:#5a6c88;flex-wrap:wrap}",
     ".sbdw-link{background:none;border:0;color:#0b5cff;font:inherit;cursor:pointer;padding:0;text-decoration:underline}",
     ".sbdw-details{display:none;gap:6px;flex-direction:column;padding:10px 12px;border-top:1px solid #e6eefb;background:#fbfdff}",
     ".sbdw-details.is-open{display:flex}",
@@ -85,7 +111,6 @@
     ".sbdw-details button{border:0;border-radius:8px;padding:8px;font:inherit;font-weight:600;cursor:pointer}",
     ".sbdw-status{font-size:12px;color:#b42318;padding:0 14px 8px}",
     ".sbdw-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}",
-    ".sbdw-foot{flex-wrap:wrap}",
   ].join("");
 
   var root = el("div", "sbdw-root sbdw-root--right");
@@ -112,6 +137,20 @@
   head.appendChild(headText);
   head.appendChild(close);
 
+  /* Chat controls sit at the top of the panel, where visitors look first. */
+  var tools = el("div", "sbdw-tools");
+  var newChatButton = el("button", "sbdw-tool", "New chat");
+  newChatButton.type = "button";
+  var endChatButton = el("button", "sbdw-tool", "End chat");
+  endChatButton.type = "button";
+  var historyButton = el("button", "sbdw-tool", "Previous chats");
+  historyButton.type = "button";
+  historyButton.style.display = "none";
+  tools.appendChild(newChatButton);
+  tools.appendChild(endChatButton);
+  tools.appendChild(historyButton);
+
+  var historyBox = el("div", "sbdw-history");
   var log = el("div", "sbdw-log");
   var status = el("div", "sbdw-status");
 
@@ -145,19 +184,14 @@
   var actions = el("div", "sbdw-actions");
   var detailsLink = el("button", "sbdw-link", "Leave my details");
   detailsLink.type = "button";
-  var newChatLink = el("button", "sbdw-link", "New chat");
-  newChatLink.type = "button";
-  var endChatLink = el("button", "sbdw-link", "End chat");
-  endChatLink.type = "button";
-  endChatLink.style.display = "none";
   actions.appendChild(detailsLink);
-  actions.appendChild(newChatLink);
-  actions.appendChild(endChatLink);
   var powered = el("span", "", "SBD AI Solutions");
   foot.appendChild(actions);
   foot.appendChild(powered);
 
   panel.appendChild(head);
+  panel.appendChild(tools);
+  panel.appendChild(historyBox);
   panel.appendChild(log);
   panel.appendChild(status);
   panel.appendChild(details);
@@ -170,15 +204,16 @@
     status.textContent = message || "";
   }
 
-  function addMessage(message, remember) {
-    if (remember != null) {
-      if (lastMessageIds[remember]) return;
-      lastMessageIds[remember] = true;
-    }
-    var kind = message.author === "team" ? "team" : message.role === "user" ? "visitor" : "ai";
-    var node = el("div", "sbdw-msg sbdw-msg--" + kind, message.content);
+  function kindFor(message) {
+    if (message.author === "team") return "team";
+    return message.role === "user" ? "visitor" : "ai";
+  }
+
+  function addMessage(message) {
+    var node = el("div", "sbdw-msg sbdw-msg--" + kindFor(message), message.content);
     log.appendChild(node);
     log.scrollTop = log.scrollHeight;
+    return node;
   }
 
   function addNote(text) {
@@ -189,8 +224,10 @@
   /* Three animated dots while the assistant is thinking, so a slow reply never
      looks like nothing happened. */
   function showTyping() {
-    if (typing) return;
-    typing = el("div", "sbdw-msg sbdw-msg--ai sbdw-typing");
+    typers += 1;
+    if (typers > 1) return;
+    var typing = el("div", "sbdw-msg sbdw-msg--ai sbdw-typing");
+    typing.setAttribute("data-typing", "1");
     typing.setAttribute("aria-label", "Assistant is typing");
     typing.innerHTML = "<span></span><span></span><span></span>";
     log.appendChild(typing);
@@ -198,9 +235,10 @@
   }
 
   function hideTyping() {
-    if (!typing) return;
-    if (typing.parentNode) typing.parentNode.removeChild(typing);
-    typing = null;
+    typers = Math.max(0, typers - 1);
+    if (typers > 0) return;
+    var typing = log.querySelector("[data-typing]");
+    if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
   }
 
   function paint() {
@@ -215,8 +253,9 @@
     dSend.style.background = bg;
     dSend.style.color = fg;
     detailsLink.style.color = bg;
-    newChatLink.style.color = bg;
-    endChatLink.style.color = bg;
+    newChatButton.style.color = bg;
+    endChatButton.style.color = bg;
+    historyButton.style.color = bg;
     title.textContent = config.name;
     subtitle.textContent = config.businessName ? config.businessName : "Ask us anything";
     root.className = "sbdw-root sbdw-root--" + (config.position === "left" ? "left" : "right");
@@ -229,37 +268,133 @@
     }
   }
 
-  function showEndButton() {
-    endChatLink.style.display = conversationId ? "inline" : "none";
+  function isEnded() {
+    return conversationStatus === "resolved";
   }
 
-  /* Clear the conversation on this device and start from the welcome message. */
-  function resetChat(note) {
-    stopPoll();
-    conversationId = "";
-    lastMessageIds = {};
-    try {
-      sessionStorage.removeItem(storeKey);
-    } catch (error) {
-      /* private browsing */
-    }
+  function paintControls() {
+    var showEnd = Boolean(conversationId) && !isEnded() && !viewingId;
+    endChatButton.style.display = showEnd ? "inline-flex" : "none";
+    historyButton.style.display = history.length ? "inline-flex" : "none";
+    historyButton.textContent = "Previous chats (" + history.length + ")";
+    var locked = isEnded() || Boolean(viewingId);
+    input.disabled = locked;
+    send.disabled = locked;
+    input.placeholder = viewingId
+      ? "Viewing a previous conversation"
+      : isEnded()
+        ? "This chat has ended — start a new chat"
+        : "Type your message…";
+  }
+
+  function renderTranscript(messages, note) {
     log.innerHTML = "";
-    addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage }, null);
+    if (!messages.length) {
+      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
+    } else {
+      messages.forEach(addMessage);
+    }
     if (note) addNote(note);
-    showEndButton();
+    paintControls();
+  }
+
+  function loadHistory() {
+    historyBox.innerHTML = "";
+    if (!history.length) {
+      historyBox.className = "sbdw-history";
+      paintControls();
+      return;
+    }
+    historyBox.appendChild(el("span", "sbdw-history-title", "Earlier conversations"));
+    history.slice().reverse().forEach(function (item) {
+      var button = el("button", "sbdw-history-item");
+      button.type = "button";
+      var label = el("strong", "", item.title || "Website chat");
+      button.appendChild(label);
+      var when = "";
+      try {
+        when = new Date(item.endedAt).toLocaleString();
+      } catch (error) {
+        when = "";
+      }
+      button.appendChild(el("span", "", when + " · tap to read"));
+      button.addEventListener("click", function () {
+        viewingId = item.id;
+        historyBox.className = "sbdw-history";
+        setStatus("");
+        fetch(base + "/api/widget/" + key + "/conversation/" + item.id)
+          .then(function (response) {
+            return response.ok ? response.json() : null;
+          })
+          .then(function (data) {
+            if (!data) {
+              setStatus("That conversation is no longer available.");
+              viewingId = "";
+              paintControls();
+              return;
+            }
+            renderTranscript(
+              data.messages || [],
+              "This conversation has ended. Start a new chat whenever you are ready."
+            );
+          })
+          .catch(function () {
+            setStatus("Could not open that conversation.");
+            viewingId = "";
+            paintControls();
+          });
+      });
+      historyBox.appendChild(button);
+    });
+    paintControls();
+  }
+
+  function rememberConversation(id, title) {
+    if (!id) return;
+    history = history.filter(function (item) {
+      return item.id !== id;
+    });
+    history.push({ id: id, title: title || "Website chat", endedAt: new Date().toISOString() });
+    if (history.length > 5) history = history.slice(history.length - 5);
+    writeStorage(historyKey, JSON.stringify(history));
+    loadHistory();
+  }
+
+  function endRemotely(id) {
+    if (!id) return Promise.resolve();
+    return fetch(base + "/api/widget/" + key + "/conversation/" + id + "/end", { method: "POST" }).catch(
+      function () {}
+    );
+  }
+
+  function startFresh(note) {
+    viewingId = "";
+    conversationId = "";
+    conversationStatus = "";
+    writeStorage(storeKey, "");
+    stopPoll();
+    log.innerHTML = "";
+    addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
+    if (note) addNote(note);
+    paintControls();
     setStatus("");
+    historyBox.className = "sbdw-history";
+    input.focus();
   }
 
   function showPanel() {
     open = true;
     panel.style.display = "flex";
     bubble.setAttribute("aria-label", "Close chat");
-    if (!log.childNodes.length) {
-      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage }, null);
-    }
-    showEndButton();
+    paintControls();
     input.focus();
-    if (conversationId) poll();
+    if (conversationId) {
+      loadConversation().then(function () {
+        if (!isEnded()) poll();
+      });
+    } else if (!log.childNodes.length) {
+      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
+    }
   }
 
   function hidePanel() {
@@ -278,38 +413,49 @@
     details.className = details.className.indexOf("is-open") >= 0 ? "sbdw-details" : "sbdw-details is-open";
   });
 
-  newChatLink.addEventListener("click", function () {
-    /* Close the previous conversation in the dashboard, then start fresh. */
-    if (conversationId) {
-      var previous = conversationId;
-      fetch(base + "/api/widget/" + key + "/conversation/" + previous + "/end", { method: "POST" }).catch(
-        function () {}
-      );
+  newChatButton.addEventListener("click", function () {
+    var previous = conversationId;
+    if (previous) {
+      endRemotely(previous);
+      rememberConversation(previous);
     }
-    resetChat("Started a new conversation.");
-    input.focus();
+    startFresh("Started a new conversation.");
   });
 
-  endChatLink.addEventListener("click", function () {
+  endChatButton.addEventListener("click", function () {
+    setStatus("");
     if (!conversationId) {
-      resetChat("Conversation ended. Thank you for chatting.");
+      startFresh("Conversation ended. Thank you for chatting.");
       return;
     }
     var id = conversationId;
-    endChatLink.disabled = true;
-    setStatus("");
-    fetch(base + "/api/widget/" + key + "/conversation/" + id + "/end", { method: "POST" })
+    endChatButton.disabled = true;
+    endRemotely(id)
       .then(function (response) {
-        if (!response.ok) throw new Error("Could not end the chat right now.");
-        resetChat("Conversation ended — thank you for chatting with us.");
+        if (response && !response.ok) throw new Error("Could not end the chat right now.");
+        conversationStatus = "resolved";
+        rememberConversation(id, conversationTitle());
+        renderTranscript(
+          currentMessages,
+          "Conversation ended — thank you for chatting with us. Your chat is saved under Previous chats."
+        );
       })
       .catch(function (error) {
         setStatus(error.message);
       })
       .then(function () {
-        endChatLink.disabled = false;
+        endChatButton.disabled = false;
+        paintControls();
       });
   });
+
+  function conversationTitle() {
+    var first = currentMessages.filter(function (message) {
+      return message.role === "user";
+    })[0];
+    var text = first ? first.content : "";
+    return text ? text.slice(0, 60) : "Website chat";
+  }
 
   function post(path, body) {
     return fetch(base + path, {
@@ -318,21 +464,58 @@
       body: JSON.stringify(body),
     }).then(function (response) {
       return response.json().then(function (data) {
-        if (!response.ok) throw new Error(data.error || "Something went wrong.");
+        if (!response.ok) {
+          var error = new Error(data.error || "Something went wrong.");
+          error.code = data.code || "";
+          throw error;
+        }
         return data;
       });
     });
   }
 
+  /* The transcript is the single source of truth: after every reply and every
+     poll the log is rebuilt from the server's messages, so a message can never
+     appear twice. */
+  var currentMessages = [];
+  var loading = null;
+
+  function loadConversation() {
+    if (!conversationId) return Promise.resolve();
+    if (loading) return loading;
+    loading = fetch(base + "/api/widget/" + key + "/conversation/" + conversationId)
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        loading = null;
+        if (!data) return;
+        conversationStatus = data.status || "";
+        currentMessages = data.messages || [];
+        renderTranscript(
+          currentMessages,
+          isEnded() ? "This conversation has ended. Start a new chat whenever you are ready." : ""
+        );
+        if (isEnded()) {
+          rememberConversation(conversationId, conversationTitle());
+          stopPoll();
+        }
+      })
+      .catch(function () {
+        loading = null;
+      });
+    return loading;
+  }
+
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var message = input.value.trim();
-    if (!message || busy) return;
+    if (!message || busy || isEnded() || viewingId) return;
     busy = true;
     send.disabled = true;
     setStatus("");
     input.value = "";
-    addMessage({ role: "user", content: message }, null);
+    addMessage({ role: "user", content: message });
     showTyping();
 
     post("/api/widget/" + key + "/chat", {
@@ -341,36 +524,38 @@
     })
       .then(function (data) {
         hideTyping();
-        saveConversation(data.conversationId);
-        showEndButton();
-        if (data.reply) {
-          addMessage(
-            { role: "assistant", author: "ai", content: data.reply },
-            data.assistantMessageId || null
-          );
-        }
+        conversationId = data.conversationId;
+        conversationStatus = "";
+        takeover = Boolean(data.takeover);
+        writeStorage(storeKey, conversationId);
+        paintControls();
         if (data.confirmationSent) {
           addNote("We emailed you a confirmation — your message has reached the team.");
         }
-        if (data.takeover) {
-          addNote("A member of the team has joined this chat.");
-          poll();
-        }
+        return loadConversation();
+      })
+      .then(function () {
+        if (takeover) poll();
       })
       .catch(function (error) {
         hideTyping();
+        if (error.code === "CONVERSATION_ENDED") {
+          conversationStatus = "resolved";
+          rememberConversation(conversationId, conversationTitle());
+          paintControls();
+        }
         setStatus(error.message);
         addNote("Your message was not delivered.");
       })
       .then(function () {
         busy = false;
-        send.disabled = false;
+        send.disabled = isEnded() || Boolean(viewingId);
       });
   });
 
   details.addEventListener("submit", function (event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || isEnded() || viewingId) return;
     busy = true;
     setStatus("");
     post("/api/widget/" + key + "/lead", {
@@ -381,8 +566,9 @@
       service: dService.value.trim(),
     })
       .then(function (data) {
-        saveConversation(data.conversationId);
-        showEndButton();
+        conversationId = data.conversationId;
+        writeStorage(storeKey, conversationId);
+        paintControls();
         addNote(
           data.confirmationSent
             ? "Thank you — the team has your details and we emailed you a confirmation."
@@ -398,28 +584,13 @@
       });
   });
 
+  var takeover = false;
+
   function poll() {
     if (polling || !conversationId) return;
     polling = setInterval(function () {
-      if (!open || !conversationId) return;
-      fetch(base + "/api/widget/" + key + "/conversation/" + conversationId)
-        .then(function (response) {
-          return response.ok ? response.json() : null;
-        })
-        .then(function (data) {
-          if (!data) return;
-          data.messages.forEach(function (message) {
-            if (message.author === "team" || message.author === "ai") {
-              addMessage(message, message.id);
-            }
-          });
-          if (data.status === "resolved" && !resolvedNoted) {
-            resolvedNoted = true;
-            addNote("This conversation was marked resolved. Start a new chat any time.");
-            stopPoll();
-          }
-        })
-        .catch(function () {});
+      if (!open || !conversationId || isEnded()) return;
+      loadConversation();
     }, 6000);
   }
 
@@ -434,6 +605,8 @@
     paint();
     document.head.appendChild(style);
     document.body.appendChild(root);
+    loadHistory();
+    if (conversationId) loadConversation();
   }
 
   function loadConfig(attempt) {

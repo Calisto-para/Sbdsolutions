@@ -556,7 +556,10 @@
           conversationId = error.data.conversationId;
           writeStorage(storeKey, conversationId);
           return loadConversation().then(function () {
-            addNote("Your message is saved. Tap Send to try again in a moment.");
+            addNote(
+              "Our assistant cannot reply at this moment. Your message is saved — leave your details and the team will get back to you."
+            );
+            details.className = "sbdw-details is-open";
             paintControls();
           });
         }

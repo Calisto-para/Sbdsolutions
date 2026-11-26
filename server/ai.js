@@ -128,40 +128,53 @@ export async function complete({ system, messages }) {
     { ...base, max_tokens: 400 },
   ];
 
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const payload = payloads[Math.min(attempt, payloads.length - 1)];
+  let payloadIndex = 0;
+  let attempts = 0;
+
+  while (attempts < 3) {
+    attempts += 1;
     try {
-      const response = await openai.chat.completions.create(payload);
+      const response = await openai.chat.completions.create(payloads[payloadIndex]);
       const text = response.choices?.[0]?.message?.content?.trim();
       if (text) {
         aiStatus.lastFailure = null;
         return { text, usage: response.usage ?? null };
       }
-      lastError = new Error("The AI returned an empty response.");
-      noteFailure(lastError, attempt + 1);
-    } catch (error) {
-      lastError = error;
-      const status = Number(error?.status || 0);
-      const message = String(error?.message || "");
-      const rejectedParameter =
-        status === 400 && /max_completion_tokens|max_tokens|unsupported|unknown parameter/i.test(message);
-      console.error(
-        `[ai] request failed (attempt ${attempt + 1}, status ${status || "?"}, code ${error?.code || error?.error?.code || "?"}): ${message}`
-      );
-      noteFailure(error, attempt + 1);
-      if (rejectedParameter && attempt === 0) continue;
-      const retryable = status === 429 || status >= 500 || status === 0 || /empty response|timeout|ECONNRESET/i.test(message);
-      if (retryable && attempt < 2) {
-        await sleep(600 * (attempt + 1));
+      const empty = new Error("The AI returned an empty response.");
+      console.error(`[ai] empty response (attempt ${attempts})`);
+      noteFailure(empty, attempts);
+      if (attempts < 2) {
+        await sleep(400);
         continue;
       }
       break;
-    }
-    /* Empty content is often a transient finish; try again once. */
-    if (attempt < 1) {
-      await sleep(400);
-      continue;
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      const message = String(error?.message || "");
+      console.error(
+        `[ai] request failed (attempt ${attempts}, status ${status || "?"}, code ${error?.code || error?.error?.code || "?"}): ${message}`
+      );
+      noteFailure(error, attempts);
+
+      /* Some models reject max_completion_tokens. Switch parameter once; that
+         is a compatibility fix, not a retry. */
+      const rejectedParameter =
+        status === 400 && /max_completion_tokens|max_tokens|unsupported|unknown parameter/i.test(message);
+      if (rejectedParameter && payloadIndex === 0) {
+        payloadIndex = 1;
+        continue;
+      }
+
+      /* A rate limit or an exhausted quota will not clear in a second, so
+         retrying only makes the visitor wait. Everything else that looks
+         transient (5xx, network, timeout) gets one more try. */
+      const retryable =
+        status === 0 || status >= 500 || /empty response|timeout|ECONNRESET|socket hang up/i.test(message);
+      if (retryable && attempts < 2) {
+        await sleep(500);
+        continue;
+      }
+      break;
     }
   }
 

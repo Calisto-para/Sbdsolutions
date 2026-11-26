@@ -271,3 +271,38 @@ alter table project_enquiries add column if not exists starting_price_amount num
 alter table project_enquiries add column if not exists starting_price_currency text;
 create index if not exists project_enquiries_user_idx on project_enquiries (user_id, created_at desc);
 create index if not exists project_enquiries_status_idx on project_enquiries (status, created_at desc);
+
+/* Business information the assistant answers from, beyond the basic profile. */
+alter table businesses add column if not exists whatsapp text not null default '';
+alter table businesses add column if not exists opening_hours text not null default '';
+alter table businesses add column if not exists social_links text not null default '';
+alter table businesses add column if not exists additional_instructions text not null default '';
+alter table businesses add column if not exists payment_methods text not null default '';
+alter table businesses add column if not exists delivery_info text not null default '';
+alter table businesses add column if not exists published_at timestamptz;
+
+/* Products and services, each with its own price, description and options.
+   Prices are entered by the customer; the platform never invents one. */
+create table if not exists business_offerings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  type text not null default 'product' check (type in ('product', 'service')),
+  name text not null,
+  description text not null default '',
+  price text not null default '',
+  options text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists business_offerings_user_idx on business_offerings (user_id, created_at);
+
+/* The knowledge base is shared by every assistant a customer owns, so an FAQ or
+   an uploaded document only has to be added once. Assistant-specific training
+   keeps its assistant_id; business-wide records use NULL. */
+alter table knowledge_items alter column assistant_id drop not null;
+alter table knowledge_items add column if not exists mime text not null default '';
+alter table knowledge_items add column if not exists size_bytes integer not null default 0;
+create index if not exists knowledge_user_idx on knowledge_items (user_id, created_at desc);
+
+/* Older project_enquiries tables may predate the owner column. */
+alter table project_enquiries add column if not exists user_id uuid references users(id) on delete set null;

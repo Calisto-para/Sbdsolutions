@@ -31,10 +31,12 @@ router.get("/", requireAuth, async (req, res, next) => {
       [req.user.id]
     );
 
+    /* Business-wide records (FAQs, documents) have no assistant_id, so this is a
+       left join: recent knowledge includes the shared knowledge base too. */
     const recentKnowledge = await query(
       `select k.id, k.kind, k.title, k.created_at, a.name as assistant_name
          from knowledge_items k
-         join assistants a on a.id = k.assistant_id
+         left join assistants a on a.id = k.assistant_id
         where k.user_id = $1
         order by k.created_at desc
         limit 5`,

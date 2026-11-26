@@ -64,7 +64,13 @@ export default function AssistantWorkspace({ assistantId, onBack, onNavigate }) 
       {error ? <div className="form-alert form-alert--error">{error}</div> : null}
 
       {view === "training" ? (
-        <Training assistantId={assistantId} items={items} reload={loadKnowledge} setError={setError} />
+        <Training
+          assistantId={assistantId}
+          items={items}
+          reload={loadKnowledge}
+          setError={setError}
+          onOpenKnowledge={() => onNavigate({ tab: "knowledge" })}
+        />
       ) : null}
 
       {view === "test" ? (
@@ -89,7 +95,7 @@ export default function AssistantWorkspace({ assistantId, onBack, onNavigate }) 
   );
 }
 
-function Training({ assistantId, items, reload, setError }) {
+function Training({ assistantId, items, reload, setError, onOpenKnowledge }) {
   /* The owner writes their own training title; everything is stored as a
      business information note. */
   const [form, setForm] = useState({ kind: "note", title: "", content: "" });
@@ -172,6 +178,12 @@ function Training({ assistantId, items, reload, setError }) {
         </div>
 
         {notice ? <div className="form-alert form-alert--ok">{notice}</div> : null}
+
+        <div className="form-alert form-alert--info">
+          Products, prices, FAQs and uploaded documents are shared by all your assistants in
+          <button className="panel-link" type="button" onClick={onOpenKnowledge}> Knowledge Base</button>.
+          Anything you add below is used by this assistant only.
+        </div>
 
         <form className="dash-form" onSubmit={addItem}>
           <div className="form-grid">

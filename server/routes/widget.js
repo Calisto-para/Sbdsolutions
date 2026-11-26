@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { query, one } from "../db.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
+import { loadKnowledgeBase } from "../knowledge.js";
 import { messageAllowanceError, requireActiveAiAccount } from "../plans.js";
 import { env } from "../env.js";
 import {
@@ -102,7 +103,6 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       return res.status(409).json({ error: "This chat is paused right now. Please contact the business directly." });
     }
 
-    const allowance = await messageAllowanceError(assistant.user_id);
     const ownerBlocked = await messageAllowanceError(assistant.user_id);
     if (ownerBlocked) return res.status(429).json({ error: ownerBlocked, code: "MESSAGE_LIMIT" });
 
@@ -163,22 +163,44 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
         limit 12`,
       [conversation.id]
     );
-    const business = await one("select * from businesses where user_id = $1", [assistant.user_id]);
-    const knowledge = await query(
-      "select kind, title, content from knowledge_items where assistant_id = $1 order by created_at desc limit 60",
-      [assistant.id]
-    );
-
-    const system = buildSystemPrompt({ assistant, business, knowledge, channel: "widget" });
-    const result = await complete({
-      system,
-      messages: [
-        ...history
-          .reverse()
-          .filter((row) => row.author !== "team")
-          .map((row) => ({ role: row.role, content: row.content })),
-      ],
+    /* The business profile, products, FAQs and the relevant passages of any
+       uploaded documents, all loaded for this assistant's owner only. */
+    const context = await loadKnowledgeBase(assistant.user_id, {
+      assistantId: assistant.id,
+      question: body.message,
     });
+
+    const system = buildSystemPrompt({
+      assistant,
+      business: context.business,
+      knowledge: context.knowledge,
+      businessContext: context.businessContext,
+      channel: "widget",
+    });
+
+    let result;
+    try {
+      result = await complete({
+        system,
+        messages: [
+          ...history
+            .reverse()
+            .filter((row) => row.author !== "team")
+            .map((row) => ({ role: row.role, content: row.content })),
+        ],
+      });
+    } catch (error) {
+      /* The visitor's message is already stored, so hand back the conversation
+         id: the widget adopts it and can retry without sending twice. */
+      if (error?.code === "AI_UNAVAILABLE") {
+        return res.status(502).json({
+          error: error.message,
+          code: error.code,
+          conversationId: conversation.id,
+        });
+      }
+      throw error;
+    }
 
     const assistantMessage = await one(
       "insert into messages (conversation_id, role, content, author) values ($1, 'assistant', $2, 'ai') returning id",

@@ -465,8 +465,9 @@
     }).then(function (response) {
       return response.json().then(function (data) {
         if (!response.ok) {
-          var error = new Error(data.error || "Something went wrong.");
+          var error = new Error(data.error || "Something went wrong. Please try again.");
           error.code = data.code || "";
+          error.data = data;
           throw error;
         }
         return data;
@@ -543,8 +544,22 @@
           conversationStatus = "resolved";
           rememberConversation(conversationId, conversationTitle());
           paintControls();
+          setStatus(error.message);
+          addNote("Your message was not delivered.");
+          return;
         }
         setStatus(error.message);
+        /* The server stored the visitor's message before the assistant call
+           failed and told us which conversation it belongs to. Adopt it, so
+           the transcript is right and nothing has to be sent twice. */
+        if (error.code === "AI_UNAVAILABLE" && error.data && error.data.conversationId) {
+          conversationId = error.data.conversationId;
+          writeStorage(storeKey, conversationId);
+          return loadConversation().then(function () {
+            addNote("Your message is saved. Tap Send to try again in a moment.");
+            paintControls();
+          });
+        }
         addNote("Your message was not delivered.");
       })
       .then(function () {

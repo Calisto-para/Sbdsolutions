@@ -18,6 +18,35 @@ export class AiNotConfiguredError extends Error {
   }
 }
 
+/* An upstream model failure is not the visitor's fault and must never look like
+   a broken website. The real reason is logged on the server; the visitor gets a
+   clear, retryable message. */
+export class AiUnavailableError extends Error {
+  constructor() {
+    super("The assistant could not answer just now. Please try again in a moment.");
+    this.status = 502;
+    this.code = "AI_UNAVAILABLE";
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/* The last upstream failure, in memory only. Exposed on /api/health so an
+   operator can see why the assistant stopped answering (bad key, exhausted
+   quota, wrong model) without digging through Render logs. Never contains the
+   API key or any customer data. */
+export const aiStatus = { lastFailure: null };
+
+function noteFailure(error, attempt) {
+  aiStatus.lastFailure = {
+    at: new Date().toISOString(),
+    attempt,
+    status: Number(error?.status || 0),
+    code: String(error?.code || error?.error?.code || "").slice(0, 80),
+    message: String(error?.message || error || "Unknown AI error").slice(0, 200),
+  };
+}
+
 let client = null;
 
 function getClient() {
@@ -58,7 +87,7 @@ const LEAD_GUIDANCE = [
   "When the visitor's question is handled and they have nothing else to ask, briefly suggest they can end the chat with the End chat button at the top of the window, and that they can start a new chat at any time.",
 ];
 
-export function buildSystemPrompt({ assistant, business, knowledge, channel = "dashboard" }) {
+export function buildSystemPrompt({ assistant, business, knowledge, businessContext = "", channel = "dashboard" }) {
   return [
     ...(channel === "widget" ? LEAD_GUIDANCE : []),
     `You are ${assistant.name}, the AI assistant for ${business?.name || "this business"}.`,
@@ -76,23 +105,67 @@ export function buildSystemPrompt({ assistant, business, knowledge, channel = "d
     assistant.instructions ? `Additional instructions from the business owner: ${assistant.instructions}` : "",
     "",
     "Business information supplied by the owner:",
+    businessContext || "No business profile has been filled in yet.",
+    "",
+    "Training material, FAQs and document passages supplied by the owner:",
     knowledgeBlock(knowledge),
   ]
     .filter(Boolean)
     .join("\n");
 }
 
+/* Ask the model once. Some models reject max_completion_tokens in favour of
+   max_tokens, and a transient 429/5xx is worth one automatic retry: those two
+   cases used to surface as "Your message was not delivered" on the widget. */
 export async function complete({ system, messages }) {
   const openai = getClient();
-  const response = await openai.chat.completions.create({
+  const base = {
     model: env.openai.model,
-    max_completion_tokens: 400,
     messages: [{ role: "system", content: system }, ...messages],
-  });
-  const text = response.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error("The AI returned an empty response.");
-  const usage = response.usage ?? null;
-  return { text, usage };
+  };
+  const payloads = [
+    { ...base, max_completion_tokens: 400 },
+    { ...base, max_tokens: 400 },
+  ];
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const payload = payloads[Math.min(attempt, payloads.length - 1)];
+    try {
+      const response = await openai.chat.completions.create(payload);
+      const text = response.choices?.[0]?.message?.content?.trim();
+      if (text) {
+        aiStatus.lastFailure = null;
+        return { text, usage: response.usage ?? null };
+      }
+      lastError = new Error("The AI returned an empty response.");
+      noteFailure(lastError, attempt + 1);
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      const message = String(error?.message || "");
+      const rejectedParameter =
+        status === 400 && /max_completion_tokens|max_tokens|unsupported|unknown parameter/i.test(message);
+      console.error(
+        `[ai] request failed (attempt ${attempt + 1}, status ${status || "?"}, code ${error?.code || error?.error?.code || "?"}): ${message}`
+      );
+      noteFailure(error, attempt + 1);
+      if (rejectedParameter && attempt === 0) continue;
+      const retryable = status === 429 || status >= 500 || status === 0 || /empty response|timeout|ECONNRESET/i.test(message);
+      if (retryable && attempt < 2) {
+        await sleep(600 * (attempt + 1));
+        continue;
+      }
+      break;
+    }
+    /* Empty content is often a transient finish; try again once. */
+    if (attempt < 1) {
+      await sleep(400);
+      continue;
+    }
+  }
+
+  throw new AiUnavailableError();
 }
 
 /* Record the real OpenAI cost of one completed request against a customer
@@ -103,10 +176,10 @@ export async function complete({ system, messages }) {
 export async function recordAiCost(userId, usage) {
   if (!usage) return;
   const dollars = costInDollars(usage, openaiPrices);
-  if (dollars <= 0) return;
+  if (!Number.isFinite(dollars) || dollars <= 0) return;
   await recordSpending(userId, dollars);
   const creditCost = creditsFor(dollars);
-  if (creditCost <= 0) return;
+  if (!Number.isFinite(creditCost) || creditCost <= 0) return;
 
   const creditError = await checkCreditLimit(userId);
   if (creditError) {

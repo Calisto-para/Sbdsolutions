@@ -4,6 +4,7 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
+import { loadKnowledgeBase } from "../knowledge.js";
 import {
   agentUsage,
   assistantAllowanceError,
@@ -532,13 +533,19 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
         )
       : [];
 
-    const business = await one("select * from businesses where user_id = $1", [req.user.id]);
-    const knowledge = await query(
-      "select kind, title, content from knowledge_items where assistant_id = $1 order by created_at desc limit 60",
-      [assistant.id]
-    );
+    /* Business profile, products, FAQs and the relevant document passages are
+       loaded for this owner and assistant only. */
+    const context = await loadKnowledgeBase(req.user.id, {
+      assistantId: assistant.id,
+      question: body.message,
+    });
 
-    const system = buildSystemPrompt({ assistant, business, knowledge });
+    const system = buildSystemPrompt({
+      assistant,
+      business: context.business,
+      knowledge: context.knowledge,
+      businessContext: context.businessContext,
+    });
     const messages = [
       ...history.reverse().map((row) => ({ role: row.role, content: row.content })),
       { role: "user", content: body.message },

@@ -6,11 +6,13 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
+import { aiStatus } from "./ai.js";
 import { emailProviderName, emailProviders } from "./mail.js";
 import { senderWarning, emailHealthSnapshot } from "./mail-check.js";
 import { dbKind, dbState, getImplementation } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import businessRoutes from "./routes/business.js";
+import knowledgeRoutes from "./routes/knowledge.js";
 import assistantRoutes from "./routes/assistants.js";
 import conversationRoutes from "./routes/conversations.js";
 import overviewRoutes from "./routes/overview.js";
@@ -79,6 +81,11 @@ app.get("/api/health", (req, res) => {
       EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || "auto",
     },
     aiConfigured,
+    /* Model name and the last upstream AI failure (no keys, no customer data). */
+    ai: {
+      model: env.openai.model,
+      lastFailure: aiStatus.lastFailure,
+    },
     /* Which ways customers can pay. Booleans only — no keys or account numbers. */
     paymentMethods: {
       online: Boolean(process.env.PAYSTACK_SECRET_KEY),
@@ -102,6 +109,7 @@ app.use("/api", (req, res, next) => {
 
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/business", businessRoutes);
+app.use("/api/knowledge", knowledgeRoutes);
 app.use("/api/assistants", assistantRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/overview", overviewRoutes);
@@ -175,6 +183,12 @@ app.use((error, req, res, next) => {
 
   if (error?.code === "AI_NOT_CONFIGURED") {
     return res.status(503).json({ error: error.message, code: "AI_NOT_CONFIGURED" });
+  }
+
+  /* The model itself failed (quota, rate limit, an unsupported parameter). The
+     visitor gets a clear retryable message instead of a generic 500. */
+  if (error?.code === "AI_UNAVAILABLE") {
+    return res.status(502).json({ error: error.message, code: "AI_UNAVAILABLE" });
   }
 
   if (error?.code === "LIMIT_FILE_SIZE") {

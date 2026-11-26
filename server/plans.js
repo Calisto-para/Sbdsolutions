@@ -121,10 +121,14 @@ export function costInDollars(usage, prices) {
   return inputCost + outputCost;
 }
 
-/* Convert actual dollars to SBD AI credits at $1 = 1,000 credits. The result
-   stays fractional so usage is accumulated accurately. */
+/* The published credit rate: $0.01 of actual OpenAI API cost = 10 SBD AI
+   credits, i.e. $1 = 1,000 credits. The result stays fractional so usage is
+   accumulated accurately and a request is never rounded up. */
+export const CREDITS_PER_DOLLAR = 1000;
+export const CREDITS_PER_CENT = CREDITS_PER_DOLLAR / 100;
+
 export function creditsFor(dollars) {
-  return dollars * 1000;
+  return dollars * CREDITS_PER_DOLLAR;
 }
 
 /* Shared helper: check whether the account behind an AI request is even

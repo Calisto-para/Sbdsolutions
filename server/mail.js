@@ -46,14 +46,15 @@ async function postJson(url, headers, payload) {
 }
 
 /* Brevo — POST /v3/smtp/email. Authenticates with the `api-key` header. */
-async function sendWithBrevo({ to, subject, text, html }) {
+async function sendWithBrevo({ to, subject, text, html, replyTo }) {
+  const reply = replyTo || env.mail.replyTo;
   return postJson(
     env.mail.brevo.apiUrl,
     { "api-key": env.mail.brevo.apiKey },
     {
       sender: { name: from.name, email: from.email },
       to: [{ email: to }],
-      ...(env.mail.replyTo ? { replyTo: { email: env.mail.replyTo } } : {}),
+      ...(reply ? { replyTo: { email: reply } } : {}),
       subject,
       htmlContent: html,
       textContent: text,
@@ -62,14 +63,15 @@ async function sendWithBrevo({ to, subject, text, html }) {
 }
 
 /* Resend — POST /emails. Authenticates with a bearer token. */
-async function sendWithResend({ to, subject, text, html }) {
+async function sendWithResend({ to, subject, text, html, replyTo }) {
+  const reply = replyTo || env.mail.replyTo;
   return postJson(
     env.mail.resend.apiUrl,
     { authorization: `Bearer ${env.mail.resend.apiKey}` },
     {
       from: from.formatted,
       to: [to],
-      ...(env.mail.replyTo ? { reply_to: env.mail.replyTo } : {}),
+      ...(reply ? { reply_to: reply } : {}),
       subject,
       html,
       text,
@@ -77,8 +79,15 @@ async function sendWithResend({ to, subject, text, html }) {
   );
 }
 
-async function sendWithSmtp({ to, subject, text, html }) {
-  await smtp().sendMail({ from: from.formatted, to, subject, text, html });
+async function sendWithSmtp({ to, subject, text, html, replyTo }) {
+  await smtp().sendMail({
+    from: from.formatted,
+    to,
+    subject,
+    text,
+    html,
+    ...(replyTo || env.mail.replyTo ? { replyTo: replyTo || env.mail.replyTo } : {}),
+  });
 }
 
 const SENDERS = { brevo: sendWithBrevo, resend: sendWithResend, smtp: sendWithSmtp };
@@ -104,7 +113,7 @@ export function emailProviders() {
 
 export const emailProviderName = emailProviders()[0] || "none";
 
-async function send({ to, subject, text, html, link }) {
+async function send({ to, subject, text, html, link, replyTo }) {
   const order = emailProviders();
   if (!order.length) {
     console.log(`[mail] No email provider configured. ${subject} -> ${to}`);
@@ -115,7 +124,7 @@ async function send({ to, subject, text, html, link }) {
   const failures = [];
   for (const name of order) {
     try {
-      await SENDERS[name]({ to, subject, text, html });
+      await SENDERS[name]({ to, subject, text, html, replyTo });
       console.log(`[mail] "${subject}" delivered to ${to} via ${name}`);
       return { delivered: true, provider: name };
     } catch (error) {
@@ -198,6 +207,111 @@ export function sendProjectEnquiryEmail(enquiry, to) {
       <p style="font-size:13px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
         The starting price is a development fee estimate, not a final quotation. Prepare and send a written quotation before requesting any payment. Third-party costs such as domain, hosting and API usage are separate.
       </p>
+    </div>`;
+
+  return send({ to, subject, text, html, link: "" });
+}
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const leadReference = (lead) => `CHAT-${String(lead.id || "").slice(0, 8).toUpperCase()}`;
+
+/* Notification to the assistant owner when the website chat collects a
+   visitor's name, email or phone number. The lead is already stored first. */
+export function sendChatLeadEmail({ lead, assistantName, businessName, transcript }, to) {
+  const reference = leadReference(lead);
+  const who = lead.name || lead.email || lead.phone || "Website visitor";
+  const subject = `New chat enquiry — ${who} (${reference})`;
+  const lines = [
+    ["Reference", reference],
+    ["Assistant", assistantName || "—"],
+    ["Business", businessName || "—"],
+    ["Name", lead.name || "—"],
+    ["Email", lead.email || "—"],
+    ["Phone / WhatsApp", lead.phone || "—"],
+    ["Needs", lead.service || "—"],
+    ["Captured", new Date(lead.created_at || Date.now()).toLocaleString("en-GB")],
+  ];
+
+  const text = [
+    "A website visitor shared their contact details in the AI chat.",
+    "",
+    ...lines.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Conversation:",
+    transcript || "(no messages yet)",
+    "",
+    lead.email
+      ? `A confirmation email was sent to the visitor at ${lead.email}.`
+      : "The visitor did not leave an email address, so no confirmation could be sent.",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#0b1220">
+      <h2 style="color:#0b1f3f;margin-bottom:4px">New chat enquiry</h2>
+      <p style="color:#5b6675;margin-top:0">${escapeHtml(reference)} · ${escapeHtml(assistantName || "AI assistant")}</p>
+      <table style="width:100%;border-collapse:collapse;margin:18px 0">
+        ${lines
+          .map(
+            ([label, value]) =>
+              `<tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675;width:38%">${escapeHtml(label)}</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escapeHtml(value)}</td></tr>`
+          )
+          .join("")}
+      </table>
+      <h3 style="color:#0b1f3f">Conversation</h3>
+      <p style="white-space:pre-wrap;line-height:1.6;background:#f5f8ff;border-radius:8px;padding:12px">${escapeHtml(transcript || "(no messages yet)")}</p>
+      <p style="font-size:13px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
+        Reply to this email to reach the visitor directly. The lead is also saved in your dashboard under Leads.
+      </p>
+    </div>`;
+
+  return send({ to, subject, text, html, link: "", replyTo: lead.email || undefined });
+}
+
+/* Automatic confirmation to the visitor that their message reached the business. */
+export function sendChatLeadAcknowledgementEmail({ lead, assistantName, businessName, transcript }, to) {
+  const reference = leadReference(lead);
+  const brand = businessName || assistantName || "our team";
+  const subject = `We received your message — ${brand}`;
+  const greeting = lead.name ? `Hello ${lead.name},` : "Hello,";
+
+  const text = [
+    greeting,
+    "",
+    `Thank you for contacting ${brand}. Your message has been sent to the team and they will reply to you at this email address.`,
+    "",
+    "Your details:",
+    `Email: ${lead.email}`,
+    ...(lead.phone ? [`Phone / WhatsApp: ${lead.phone}`] : []),
+    ...(lead.service ? [`What you need: ${lead.service}`] : []),
+    `Reference: ${reference}`,
+    "",
+    transcript ? `Your conversation:\n${transcript}` : "",
+    "",
+    assistantName ? `This confirmation is from the ${assistantName} assistant on behalf of ${brand}.` : "",
+    "If you need to add anything, simply reply to this email.",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;color:#0b1220">
+      <h2 style="color:#0b1f3f">Message received</h2>
+      <p>${escapeHtml(greeting)}</p>
+      <p>Thank you for contacting <strong>${escapeHtml(brand)}</strong>. Your message has been sent to the team and they will reply to you at this email address.</p>
+      <table style="width:100%;border-collapse:collapse;margin:18px 0">
+        <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Reference</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escapeHtml(reference)}</td></tr>
+        <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Email</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeHtml(lead.email)}</td></tr>
+        ${lead.phone ? `<tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Phone / WhatsApp</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeHtml(lead.phone)}</td></tr>` : ""}
+        ${lead.service ? `<tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">What you need</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeHtml(lead.service)}</td></tr>` : ""}
+      </table>
+      ${transcript ? `<h3 style="color:#0b1f3f">Your conversation</h3><p style="white-space:pre-wrap;line-height:1.6;background:#f5f8ff;border-radius:8px;padding:12px">${escapeHtml(transcript)}</p>` : ""}
+      <p style="font-size:13px;color:#5b6675">If you need to add anything, simply reply to this email.</p>
     </div>`;
 
   return send({ to, subject, text, html, link: "" });

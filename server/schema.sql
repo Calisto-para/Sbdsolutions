@@ -117,6 +117,11 @@ create table if not exists leads (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+/* Lead notification tracking: one owner alert and one visitor confirmation per lead. */
+alter table leads add column if not exists notified_at timestamptz;
+alter table leads add column if not exists acknowledged_at timestamptz;
+alter table leads add column if not exists notification_status text not null default '';
+alter table leads add column if not exists notification_error text not null default '';
 create unique index if not exists leads_conversation_idx on leads (conversation_id);
 create index if not exists leads_user_idx on leads (user_id, created_at desc);
 

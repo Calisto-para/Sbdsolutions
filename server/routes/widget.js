@@ -4,6 +4,7 @@ import { z } from "zod";
 import { query, one } from "../db.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
 import { messageAllowanceError, requireActiveAiAccount } from "../plans.js";
+import { sendChatLeadAcknowledgementEmail, sendChatLeadEmail } from "../mail.js";
 
 /* Public chatbot endpoints used by the embeddable widget. There is no session
    here: the assistant's public key identifies the business, and a conversation
@@ -175,7 +176,14 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     await recordAiCost(assistant.user_id, result.usage);
 
     const lead = await saveLead(assistant, conversation, details);
-    res.json({ conversationId: conversation.id, reply: result.text, leadCaptured: lead });
+    const notified = lead ? await notifyLead(assistant, conversation) : { alerted: false, acknowledged: false };
+    res.json({
+      conversationId: conversation.id,
+      reply: result.text,
+      leadCaptured: lead,
+      leadAlerted: notified.alerted,
+      confirmationSent: notified.acknowledged,
+    });
   } catch (error) {
     next(error);
   }
@@ -216,6 +224,77 @@ async function saveLead(assistant, conversation, details) {
     ]
   );
   return true;
+}
+
+/* The chat collected a visitor's details: alert the assistant owner at their
+   main email address and confirm to the visitor that the message arrived.
+   Both emails are sent once per lead, and a mail failure never breaks the chat. */
+async function notifyLead(assistant, conversation) {
+  const result = { alerted: false, acknowledged: false };
+  try {
+    const lead = await one("select * from leads where conversation_id = $1", [conversation.id]);
+    if (!lead || (!lead.email && !lead.phone)) return result;
+
+    const owner = await one(
+      `select u.email, u.full_name, b.name as business_name, b.support_email
+         from users u
+         left join businesses b on b.user_id = u.id
+        where u.id = $1`,
+      [assistant.user_id]
+    );
+    const ownerEmail = String(owner?.support_email || owner?.email || "").trim();
+    const businessName = owner?.business_name || owner?.full_name || "";
+
+    const messages = await query(
+      `select role, author, content from messages
+        where conversation_id = $1
+        order by created_at asc
+        limit 20`,
+      [conversation.id]
+    );
+    const transcript = messages
+      .map((row) => {
+        const who = row.author === "team" ? "Team" : row.role === "user" ? "Visitor" : "Assistant";
+        return `${who}: ${row.content}`;
+      })
+      .join("\n")
+      .slice(0, 4000);
+
+    if (!lead.notified_at && ownerEmail) {
+      const sent = await sendChatLeadEmail(
+        { lead, assistantName: assistant.name, businessName, transcript },
+        ownerEmail
+      );
+      result.alerted = Boolean(sent?.delivered);
+      await query(
+        `update leads
+            set notified_at = now(),
+                notification_status = $2,
+                notification_error = $3,
+                updated_at = now()
+          where id = $1`,
+        [
+          lead.id,
+          sent?.delivered ? "sent" : "failed",
+          sent?.delivered ? "" : String((sent?.failures || []).join(" | ")).slice(0, 500),
+        ]
+      );
+    }
+
+    if (!lead.acknowledged_at && lead.email) {
+      const sent = await sendChatLeadAcknowledgementEmail(
+        { lead, assistantName: assistant.name, businessName, transcript },
+        lead.email
+      );
+      result.acknowledged = Boolean(sent?.delivered);
+      if (sent?.delivered) {
+        await query("update leads set acknowledged_at = now(), updated_at = now() where id = $1", [lead.id]);
+      }
+    }
+  } catch (error) {
+    console.error(`[widget] lead notification failed for conversation ${conversation.id} — ${error.message}`);
+  }
+  return result;
 }
 
 /* Optional "leave your details" form in the widget, for visitors who would
@@ -264,11 +343,15 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
       phone: body.phone,
       service: body.service,
     });
+    const notified = await notifyLead(assistant, conversation);
 
     res.status(201).json({
       ok: true,
       conversationId: conversation.id,
-      message: "Thank you — your details are with the team.",
+      confirmationSent: notified.acknowledged,
+      message: notified.acknowledged
+        ? "Thank you — your details are with the team and a confirmation is on its way to your inbox."
+        : "Thank you — your details are with the team.",
     });
   } catch (error) {
     next(error);

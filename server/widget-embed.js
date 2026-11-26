@@ -266,6 +266,9 @@
         hideTyping();
         saveConversation(data.conversationId);
         if (data.reply) addMessage({ role: "assistant", author: "ai", content: data.reply }, null);
+        if (data.confirmationSent) {
+          addNote("We emailed you a confirmation — your message has reached the team.");
+        }
         if (data.takeover) {
           addNote("A member of the team has joined this chat.");
           poll();
@@ -296,7 +299,11 @@
     })
       .then(function (data) {
         saveConversation(data.conversationId);
-        addNote("Thank you — the team has your details.");
+        addNote(
+          data.confirmationSent
+            ? "Thank you — the team has your details and we emailed you a confirmation."
+            : "Thank you — the team has your details."
+        );
         details.className = "sbdw-details";
       })
       .catch(function (error) {

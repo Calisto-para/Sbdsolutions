@@ -114,7 +114,7 @@ export default function Subscriptions() {
 
   const messagePercent = Math.min(
     100,
-    Math.round((data.usage.messages / Math.max(1, data.usage.messageLimit)) * 100)
+    Math.round((data.usage.customers / Math.max(1, data.usage.messageLimit)) * 100)
   );
   const assistantPercent = Math.min(
     100,
@@ -160,14 +160,14 @@ export default function Subscriptions() {
         <div className="usage-grid">
           <div className="usage-item">
             <div className="usage-head">
-              <span>Messages this month</span>
-              <strong>{data.usage.messages} / {data.usage.messageLimit}</strong>
+              <span>Customers this month</span>
+              <strong>{data.usage.customers} / {data.usage.messageLimit}</strong>
             </div>
             <div className="usage-bar"><span style={{ width: `${messagePercent}%` }} /></div>
           </div>
           <div className="usage-item">
             <div className="usage-head">
-              <span>AI assistants</span>
+              <span>AI agents</span>
               <strong>{data.usage.assistants} / {data.usage.assistantLimit}</strong>
             </div>
             <div className="usage-bar"><span style={{ width: `${assistantPercent}%` }} /></div>

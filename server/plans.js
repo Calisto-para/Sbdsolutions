@@ -196,10 +196,49 @@ export async function usageFor(userId) {
           from messages m
           join conversations c on c.id = m.conversation_id
          where c.user_id = $1 and m.role = 'user' and m.created_at >= date_trunc('month', now())) as messages,
+       /* Monthly customer allowance counts each customer once, however many
+          messages they send. Known contacts are matched by email or phone;
+          otherwise the conversation stands in for one customer. */
+       (select count(distinct coalesce(nullif(c.visitor_email, ''), nullif(c.visitor_phone, ''), c.id::text))::int
+          from conversations c
+          join messages m on m.conversation_id = c.id
+         where c.user_id = $1
+           and m.role = 'user'
+           and m.created_at >= date_trunc('month', now())) as customers,
        (select count(*)::int from leads where user_id = $1) as leads`,
     [userId]
   );
   return row;
+}
+
+/* Effective AI agent allowance. Standard plans use the plan's own limit;
+   Enterprise must be given an explicit allowance by an operator. */
+export function assistantLimitFor(plan, subscription) {
+  if (!plan) return 0;
+  if (plan.custom) {
+    const assigned = subscription?.agent_allowance;
+    return assigned == null ? 0 : Math.max(0, Number(assigned));
+  }
+  return Math.max(0, Number(plan.assistant_limit || 0));
+}
+
+export async function agentUsage(userId) {
+  const { subscription, plan } = await currentPlan(userId);
+  const counted = await one("select count(*)::int as used from assistants where user_id = $1", [userId]);
+  const used = Number(counted?.used || 0);
+  const limit = assistantLimitFor(plan, subscription);
+  const custom = Boolean(plan?.custom);
+  return {
+    used,
+    limit,
+    remaining: Math.max(0, limit - used),
+    canCreate: used < limit,
+    planId: plan?.id || "",
+    planName: plan?.name || "Starter",
+    custom,
+    /* Enterprise with no allowance configured yet. */
+    allowancePending: custom && subscription?.agent_allowance == null,
+  };
 }
 
 const shape = (plan) =>
@@ -239,9 +278,15 @@ export async function subscriptionSummary(userId) {
       assistants: usage.assistants,
       conversations: usage.conversations,
       messages: usage.messages,
+      customers: usage.customers,
       leads: usage.leads,
-      assistantLimit: plan?.assistant_limit ?? 1,
-      messageLimit: plan?.message_limit ?? 200,
+      assistantLimit: assistantLimitFor(plan, subscription),
+      agentAllowance: subscription.agent_allowance ?? null,
+      agentRemaining: Math.max(0, assistantLimitFor(plan, subscription) - usage.assistants),
+      canCreateAgent: usage.assistants < assistantLimitFor(plan, subscription),
+      planCustom: Boolean(plan?.custom),
+      customerLimit: plan?.message_limit ?? 50,
+      messageLimit: plan?.message_limit ?? 50,
       tokensUsed: subscription.tokens_used ?? 0,
       tokenLimit: plan?.token_limit ?? 0,
       creditsUsed: subscription.credits_used ?? 0,
@@ -258,16 +303,20 @@ export async function subscriptionSummary(userId) {
    Visitor messages are counted for the business owner's plan (the owner of
    the widget/assistant being chatting with), so a busy widget is charged to
    the business's monthly visitor-message allowance, not to the visitor. */
+/* The monthly allowance counts unique customers, not messages. */
 export async function messageAllowanceError(userId) {
   const { plan } = await currentPlan(userId);
   const usage = await usageFor(userId);
-  if (usage.messages < (plan?.message_limit ?? 200)) return "";
-  return `This month's ${plan?.message_limit ?? 200}-message allowance on the ${plan?.name || "Starter"} plan is used up. Upgrade the plan to keep answering visitors.`;
+  const limit = plan?.message_limit ?? 50;
+  if (usage.customers < limit) return "";
+  return `This month's ${limit}-customer allowance on the ${plan?.name || "Starter"} plan is used up. Upgrade the plan to keep answering new customers.`;
 }
 
 export async function assistantAllowanceError(userId) {
-  const { plan } = await currentPlan(userId);
-  const usage = await usageFor(userId);
-  if (usage.assistants < (plan?.assistant_limit ?? 1)) return "";
-  return `The ${plan?.name || "Starter"} plan includes ${plan?.assistant_limit ?? 1} AI assistant${(plan?.assistant_limit ?? 1) === 1 ? "" : "s"}. Upgrade the plan to add another.`;
+  const usage = await agentUsage(userId);
+  if (usage.canCreate) return "";
+  if (usage.custom && usage.allowancePending) {
+    return "Your Enterprise account does not have an AI agent allowance yet. Contact support so we can assign one to your account.";
+  }
+  return `You have reached the maximum number of AI agents allowed on your current plan (${usage.used} of ${usage.limit}). Upgrade your subscription to create additional AI agents.`;
 }

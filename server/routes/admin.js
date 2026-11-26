@@ -155,6 +155,8 @@ router.get("/users/:id", async (req, res, next) => {
       [id]
     );
 
+    const subscription = await one("select * from subscriptions where user_id = $1", [id]);
+
     res.json({
       user: {
         ...publicUser(user),
@@ -162,6 +164,13 @@ router.get("/users/:id", async (req, res, next) => {
         phone: user.phone,
         createdAt: user.created_at,
       },
+      subscription: subscription
+        ? {
+            planId: subscription.plan_id,
+            status: subscription.status,
+            agentAllowance: subscription.agent_allowance ?? null,
+          }
+        : null,
       business: business
         ? {
             name: business.name,
@@ -202,10 +211,16 @@ router.patch("/users/:id", async (req, res, next) => {
         role: z.enum(["client", "admin"]).optional(),
         suspended: z.boolean().optional(),
         suspendedReason: z.string().trim().max(300).optional(),
+        /* Agent allowance assigned to Enterprise accounts (null clears it). */
+        agentAllowance: z.number().int().min(0).max(10000).nullable().optional(),
       })
-      .refine((data) => data.role !== undefined || data.suspended !== undefined, {
-        message: "Choose a role or a suspension state.",
-      })
+      .refine(
+        (data) =>
+          data.role !== undefined ||
+          data.suspended !== undefined ||
+          data.agentAllowance !== undefined,
+        { message: "Choose a role, a suspension state or an agent allowance." }
+      )
       .parse(req.body);
 
     if (id === req.user.id) {
@@ -226,14 +241,30 @@ router.patch("/users/:id", async (req, res, next) => {
     );
     if (!updated) return res.status(404).json({ error: "Not found." });
 
+    if (body.agentAllowance !== undefined) {
+      await query(
+        `insert into subscriptions (user_id, plan_id, agent_allowance)
+         values ($1, 'starter', $2)
+         on conflict (user_id) do update
+            set agent_allowance = $2, updated_at = now()`,
+        [id, body.agentAllowance]
+      );
+    }
+
     res.json({
       ok: true,
       user: publicUser(updated),
-      message: body.suspended === true
-        ? `${updated.full_name} can no longer sign in.`
-        : body.suspended === false
-          ? `${updated.full_name} can sign in again.`
-          : "Account updated.",
+      agentAllowance: body.agentAllowance,
+      message:
+        body.agentAllowance !== undefined
+          ? body.agentAllowance === null
+            ? "Enterprise agent allowance cleared."
+            : `${updated.full_name} can now create up to ${body.agentAllowance} AI agents.`
+          : body.suspended === true
+            ? `${updated.full_name} can no longer sign in.`
+            : body.suspended === false
+              ? `${updated.full_name} can sign in again.`
+              : "Account updated.",
     });
   } catch (error) {
     next(error);

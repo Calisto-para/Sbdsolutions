@@ -3,6 +3,8 @@ import { api } from "../../lib/api";
 
 const KIND_LABEL = { note: "Business info", faq: "FAQ", pricing: "Pricing", document: "Document" };
 
+const percent = (used, limit) => Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+
 export default function Overview({ onNavigate }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -16,15 +18,77 @@ export default function Overview({ onNavigate }) {
   if (error) return <div className="form-alert form-alert--error">{error}</div>;
   if (!data) return <div className="dash-loading">Loading overview…</div>;
 
+  const limits = data.limits || {};
   const stats = [
-    { label: "AI assistants", value: data.stats.assistants },
+    { label: "AI agents", value: data.stats.assistants },
     { label: "Training items", value: data.stats.knowledgeItems },
     { label: "Conversations", value: data.stats.conversations },
     { label: "Messages handled", value: data.stats.messages },
   ];
 
+  const agentPercent = percent(limits.used ?? data.stats.assistants, limits.limit ?? 1);
+  const customerPercent = percent(limits.customers ?? 0, limits.customerLimit ?? 50);
+  const atAgentLimit = limits.canCreate === false;
+
   return (
     <div className="dash-stack">
+      <section className="panel">
+        <div className="panel-head panel-head--row">
+          <div>
+            <h2>Plan usage</h2>
+            <p>
+              {limits.planName || "Your"} plan ·{" "}
+              {limits.remaining ?? 0} agent {(limits.remaining ?? 0) === 1 ? "slot" : "slots"} remaining
+            </p>
+          </div>
+          <button type="button" className="panel-link" onClick={() => onNavigate({ tab: "subscriptions" })}>
+            Manage plan
+          </button>
+        </div>
+
+        <div className="usage-grid">
+          <div className="usage-item">
+            <div className="usage-head">
+              <span>AI agents used</span>
+              <strong>
+                {limits.used ?? data.stats.assistants} / {limits.limit ?? 1}
+              </strong>
+            </div>
+            <div className="usage-bar">
+              <span style={{ width: `${agentPercent}%` }} />
+            </div>
+          </div>
+
+          <div className="usage-item">
+            <div className="usage-head">
+              <span>Customers this month</span>
+              <strong>
+                {limits.customers ?? 0} / {limits.customerLimit ?? 50}
+              </strong>
+            </div>
+            <div className="usage-bar">
+              <span style={{ width: `${customerPercent}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {atAgentLimit ? (
+          <div className="usage-lock">
+            <p>
+              You have reached the maximum number of AI agents allowed on your current plan. Upgrade your subscription
+              to create additional AI agents.
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={() => onNavigate({ tab: "subscriptions" })}
+            >
+              Upgrade plan
+            </button>
+          </div>
+        ) : null}
+      </section>
+
       <div className="stat-grid">
         {stats.map((stat) => (
           <div className="stat-card" key={stat.label}>
@@ -90,7 +154,7 @@ export default function Overview({ onNavigate }) {
         </div>
         <div className="quick-actions">
           <button type="button" className="btn btn--primary btn--sm" onClick={() => onNavigate({ tab: "assistants" })}>
-            Create an AI assistant
+            Create an AI agent
           </button>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => onNavigate({ tab: "business" })}>
             Complete business profile

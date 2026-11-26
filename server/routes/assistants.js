@@ -5,6 +5,7 @@ import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
 import {
+  agentUsage,
   assistantAllowanceError,
   checkTokenLimit,
   addTokenUsage,
@@ -87,6 +88,7 @@ router.get("/", requireAuth, async (req, res, next) => {
         knowledgeCount: row.knowledge_count,
         conversationCount: row.conversation_count,
       })),
+      limits: await agentUsage(req.user.id),
     });
   } catch (error) {
     next(error);
@@ -121,7 +123,11 @@ router.post("/", requireAuth, async (req, res, next) => {
         body.welcomeMessage,
       ]
     );
-    res.status(201).json({ assistant: toApi(row), message: "Assistant created." });
+    res.status(201).json({
+      assistant: toApi(row),
+      limits: await agentUsage(req.user.id),
+      message: "Assistant created.",
+    });
   } catch (error) {
     next(error);
   }

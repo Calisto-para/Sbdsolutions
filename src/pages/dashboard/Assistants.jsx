@@ -21,6 +21,7 @@ const EMPTY = {
 
 export default function Assistants({ onOpen }) {
   const [assistants, setAssistants] = useState(null);
+  const [limits, setLimits] = useState(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState("");
@@ -28,7 +29,10 @@ export default function Assistants({ onOpen }) {
 
   const load = () =>
     api("/assistants")
-      .then((data) => setAssistants(data.assistants))
+      .then((data) => {
+        setAssistants(data.assistants);
+        setLimits(data.limits);
+      })
       .catch((err) => setError(err.message));
 
   useEffect(() => {
@@ -43,6 +47,7 @@ export default function Assistants({ onOpen }) {
     setError("");
     try {
       const data = await api("/assistants", { method: "POST", body: form });
+      if (data.limits) setLimits(data.limits);
       setForm(EMPTY);
       setCreating(false);
       await load();
@@ -56,19 +61,69 @@ export default function Assistants({ onOpen }) {
 
   if (!assistants) return error ? <div className="form-alert form-alert--error">{error}</div> : <div className="dash-loading">Loading assistants…</div>;
 
+  const atLimit = limits ? !limits.canCreate : false;
+  const limitPercent = limits ? Math.min(100, Math.round((limits.used / Math.max(1, limits.limit)) * 100)) : 0;
+
   return (
     <div className="dash-stack">
       <div className="panel-head panel-head--row">
         <div>
-          <h2>Your AI assistants</h2>
-          <p>Each assistant has its own knowledge, instructions and conversations.</p>
+          <h2>Your AI agents</h2>
+          <p>Each agent has its own knowledge, instructions and conversations.</p>
         </div>
-        <button className="btn btn--primary btn--sm" type="button" onClick={() => setCreating((open) => !open)}>
-          {creating ? "Cancel" : "New assistant"}
+        <button
+          className="btn btn--primary btn--sm"
+          type="button"
+          disabled={atLimit}
+          aria-disabled={atLimit}
+          onClick={() => setCreating((open) => (atLimit ? false : !open))}
+        >
+          {creating ? "Cancel" : "New AI agent"}
         </button>
       </div>
 
+      {limits ? (
+        <section className="panel">
+          <div className="usage-item">
+            <div className="usage-head">
+              <span>AI agent usage</span>
+              <strong>
+                {limits.used} / {limits.limit} AI agents used
+              </strong>
+            </div>
+            <div className="usage-bar">
+              <span style={{ width: `${limitPercent}%` }} />
+            </div>
+            <p className="panel-note">
+              {limits.custom && limits.allowancePending
+                ? "Your Enterprise allowance has not been assigned yet. Contact support to agree your AI agent allowance."
+                : limits.remaining > 0
+                  ? `${limits.remaining} agent ${limits.remaining === 1 ? "slot" : "slots"} remaining on the ${limits.planName} plan.`
+                  : `All ${limits.limit} agent ${limits.limit === 1 ? "slot is" : "slots are"} in use on the ${limits.planName} plan.`}
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       {error ? <div className="form-alert form-alert--error">{error}</div> : null}
+
+      {atLimit ? (
+        <div className="form-alert form-alert--info">
+          <p>
+            You have reached the maximum number of AI agents allowed on your current plan. Upgrade your subscription
+            to create additional AI agents.
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => {
+              window.location.href = "/dashboard?tab=subscriptions";
+            }}
+          >
+            Upgrade plan
+          </button>
+        </div>
+      ) : null}
 
       {creating ? (
         <section className="panel panel--form">

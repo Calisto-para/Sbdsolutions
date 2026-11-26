@@ -14,7 +14,7 @@ import AccountSettings from "./AccountSettings";
 const SECTIONS = [
   { key: "overview", label: "Dashboard Overview", icon: "M4 13h6V4H4v9Zm10 7h6v-9h-6v9ZM4 20h6v-4H4v4Zm10-13h6V4h-6v3Z" },
   { key: "business", label: "My Business", icon: "M4 20h16M6 20V9m4 11V9m4 11V9m4 11V9M4 9l8-5 8 5" },
-  { key: "assistants", label: "My AI Assistants", icon: "M7 7h10v10H7zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" },
+  { key: "assistants", label: "My AI Agents", icon: "M7 7h10v10H7zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" },
   { key: "chatbot", label: "Website Chatbot", icon: "M7 7h10v10H7zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" },
   { key: "leads", label: "Leads", icon: "M4 5h16v14H4zM4 8l8 5 8-5" },
   { key: "conversations", label: "Conversations", icon: "M21 12a8 8 0 0 1-12 7L4 21l1.6-4.4A8 8 0 1 1 21 12Z" },

@@ -153,10 +153,10 @@ alter table plans add column if not exists token_price_hidden boolean not null d
 alter table plans add column if not exists underlying_cost numeric(10, 2);
 alter table plans add column if not exists credit_limit integer;
 insert into plans (id, name, price, currency, assistant_limit, message_limit, token_limit, credit_limit, features, sort_order, custom, billing_note, token_price_hidden, underlying_cost) values
-  ('starter', 'Starter', 15, 'USD', 1, 35, 3000, 3000, '["1 AI assistant", "35 visitor messages a month", "Website chatbot", "Lead collection", "3,000 SBD AI credits a month"]'::jsonb, 1, false, 'Billed monthly', true, 3),
-  ('professional', 'Professional', 35, 'USD', 3, 100, 10000, 10000, '["3 AI assistants", "100 visitor messages a month", "Website chatbot", "Lead collection", "10,000 SBD AI credits a month", "Priority support"]'::jsonb, 2, false, 'Billed monthly', true, 10),
-  ('business', 'Business', 65, 'USD', 10, 200, 25000, 25000, '["10 AI assistants", "200 visitor messages a month", "Website chatbot", "Lead collection", "25,000 SBD AI credits a month", "Priority support"]'::jsonb, 3, false, 'Billed monthly', true, 25),
-  ('enterprise', 'Enterprise', 0, 'USD', 50, 100000, 0, null, '["Unlimited assistants by agreement", "Custom message volume", "Website chatbot", "Lead collection", "SBD AI credits by agreement"]'::jsonb, 4, true, 'Monthly or agreed billing', false, null)
+  ('starter', 'Starter', 15, 'USD', 1, 50, 3000, 3000, '["1 AI agent", "50 unique customers a month", "Website chatbot", "Lead collection", "3,000 SBD AI credits a month"]'::jsonb, 1, false, 'Billed monthly', true, 3),
+  ('professional', 'Professional', 35, 'USD', 3, 150, 10000, 10000, '["3 AI agents", "150 unique customers a month", "Website chatbot", "Lead collection", "10,000 SBD AI credits a month", "Priority support"]'::jsonb, 2, false, 'Billed monthly', true, 10),
+  ('business', 'Business', 65, 'USD', 10, 300, 25000, 25000, '["10 AI agents", "300 unique customers a month", "Website chatbot", "Lead collection", "25,000 SBD AI credits a month", "Priority support"]'::jsonb, 3, false, 'Billed monthly', true, 25),
+  ('enterprise', 'Enterprise', 0, 'USD', 0, 100000, 0, null, '["AI agents by administrator allowance", "Custom message volume", "Website chatbot", "Lead collection", "SBD AI credits by agreement"]'::jsonb, 4, true, 'Monthly or agreed billing', false, null)
 on conflict (id) do update
   set name = excluded.name,
       price = excluded.price,
@@ -187,6 +187,9 @@ create table if not exists subscriptions (
 alter table subscriptions add column if not exists tokens_used integer not null default 0;
 alter table subscriptions add column if not exists credits_used numeric not null default 0;
 alter table subscriptions add column if not exists spending_used numeric not null default 0;
+/* Enterprise agent allowance is assigned per account by an operator. Null means
+   none has been agreed yet, so no additional agents can be created. */
+alter table subscriptions add column if not exists agent_allowance integer;
 
 /* Retire the old plan ids without stranding anyone who was subscribed to them.
    Runs after subscriptions exists, so a fresh database starts cleanly. */

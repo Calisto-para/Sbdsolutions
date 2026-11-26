@@ -1,6 +1,7 @@
 import express from "express";
 import { query, one } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { agentUsage, currentPlan, usageFor } from "../plans.js";
 
 const router = express.Router();
 
@@ -40,7 +41,18 @@ router.get("/", requireAuth, async (req, res, next) => {
       [req.user.id]
     );
 
+    const [limits, monthly, planInfo] = await Promise.all([
+      agentUsage(req.user.id),
+      usageFor(req.user.id),
+      currentPlan(req.user.id),
+    ]);
+
     res.json({
+      limits: {
+        ...limits,
+        customers: monthly.customers,
+        customerLimit: planInfo.plan?.message_limit ?? 50,
+      },
       stats: {
         assistants: stats.assistants,
         knowledgeItems: stats.knowledge_items,

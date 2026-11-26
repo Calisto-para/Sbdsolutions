@@ -514,3 +514,60 @@
 .dash .panel::before {
   display: none;
 }
+
+/* Operator: enterprise AI agent allowance --------------------------------- */
+
+.admin-allowance {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.admin-allowance > div {
+  flex: 1 1 260px;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-allowance-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.admin-allowance-field input {
+  width: 120px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.usage-lock {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f3d9a4;
+  border-radius: 12px;
+  background: #fffaef;
+}
+
+.usage-lock p {
+  margin: 0;
+  max-width: 62ch;
+  color: #7a5a12;
+  font-size: 0.86rem;
+}

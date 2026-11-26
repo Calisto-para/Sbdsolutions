@@ -12,6 +12,7 @@ export default function AdminUsers() {
   const [detail, setDetail] = useState(null);
   const [detailError, setDetailError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [allowance, setAllowance] = useState("");
 
   const load = (search = "") => {
     setError("");
@@ -32,6 +33,30 @@ export default function AdminUsers() {
       .then(setDetail)
       .catch((err) => setDetailError(err.message));
   }, [selected]);
+
+  useEffect(() => {
+    if (!detail) return;
+    const assigned = detail.subscription?.agentAllowance;
+    setAllowance(assigned == null ? "" : String(assigned));
+  }, [detail]);
+
+  const saveAllowance = async () => {
+    setSaving(true);
+    setDetailError("");
+    try {
+      const value = allowance === "" ? null : Number(allowance);
+      await api(`/admin/users/${detail.user.id}`, { method: "PATCH", body: { agentAllowance: value } });
+      setDetail({
+        ...detail,
+        subscription: { ...(detail.subscription || {}), agentAllowance: value },
+      });
+      load(query);
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const setSuspended = async (suspended) => {
     const verb = suspended ? "Suspend" : "Reactivate";
@@ -222,6 +247,31 @@ export default function AdminUsers() {
                     Make operator
                   </button>
                 )}
+              </div>
+
+              <h3 className="admin-subhead">AI agent allowance</h3>
+              <div className="admin-allowance">
+                <div>
+                  <p className="admin-stat-note">
+                    Current plan: {detail.subscription?.planId || "starter"}. Standard plans use their fixed agent
+                    limit; Enterprise accounts are limited to the allowance set here.
+                  </p>
+                  <label className="admin-allowance-field">
+                    <span>Maximum AI agents</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10000"
+                      step="1"
+                      value={allowance}
+                      onChange={(event) => setAllowance(event.target.value)}
+                      placeholder="Not assigned"
+                    />
+                  </label>
+                </div>
+                <button className="btn btn--primary btn--sm" type="button" disabled={saving} onClick={saveAllowance}>
+                  Save allowance
+                </button>
               </div>
 
               {detail.user.suspended ? (

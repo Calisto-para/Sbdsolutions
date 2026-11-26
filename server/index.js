@@ -143,10 +143,22 @@ app.use("/admin", (req, res, next) => {
 });
 
 if (fs.existsSync(WEB_ROOT)) {
-  app.use(express.static(WEB_ROOT, { extensions: ["html"], maxAge: env.isProd ? "1h" : 0 }));
+  app.use(
+    express.static(WEB_ROOT, {
+      extensions: ["html"],
+      maxAge: env.isProd ? "1h" : 0,
+      /* Pages must revalidate so a deploy is visible immediately; hashed
+         assets keep their long cache. A stale shell is why a newly added
+         script (the chat widget) can look missing. */
+      setHeaders(res, filePath) {
+        if (filePath.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+      },
+    })
+  );
   /* Client-side routing: every non-file path boots the React app. */
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(WEB_ROOT, APP_SHELL));
   });
 }

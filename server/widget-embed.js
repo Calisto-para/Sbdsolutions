@@ -335,16 +335,39 @@
     }, 6000);
   }
 
-  fetch(base + "/api/widget/" + key)
-    .then(function (response) {
-      return response.ok ? response.json() : null;
-    })
-    .then(function (data) {
-      if (!data || !data.assistant || !data.assistant.active) return;
-      config = data.assistant;
-      paint();
-      document.head.appendChild(style);
-      document.body.appendChild(root);
-    })
-    .catch(function () {});
+  /* A cold server or a database still warming up answers 5xx for a few
+     seconds. Retry briefly instead of giving up, so the widget does not
+     silently vanish for the rest of the visit. */
+  var attached = false;
+
+  function mount() {
+    if (attached) return;
+    attached = true;
+    paint();
+    document.head.appendChild(style);
+    document.body.appendChild(root);
+  }
+
+  function loadConfig(attempt) {
+    fetch(base + "/api/widget/" + key)
+      .then(function (response) {
+        if (response.ok) return response.json();
+        if (response.status >= 500) throw new Error("server warming up");
+        return null;
+      })
+      .then(function (data) {
+        if (!data || !data.assistant || !data.assistant.active) return;
+        config = data.assistant;
+        mount();
+      })
+      .catch(function () {
+        if (attempt < 5) {
+          setTimeout(function () {
+            loadConfig(attempt + 1);
+          }, 1500 * attempt);
+        }
+      });
+  }
+
+  loadConfig(1);
 })();

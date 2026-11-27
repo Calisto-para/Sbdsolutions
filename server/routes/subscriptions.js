@@ -7,13 +7,15 @@ import { currentPlan, subscriptionSummary } from "../plans.js";
 import {
   activatePayment,
   checkProviderPayment,
-  initializePaystack,
+  initializeOnlinePayment,
   newReference,
-  paystackEnabled,
+  onlineEnabled,
+  onlineProvider,
   paymentConfig,
   paymentMethodsConfigured,
   paymentView,
-  verifyPaystack,
+  providerSaysPaid,
+  verifyOnlinePayment,
 } from "../payments.js";
 import { quoteInCurrency, publicRates } from "../fx.js";
 import { COUNTRIES, PAYMENT_CURRENCIES, currencyForCountry, findCountry, formatMoney } from "../../shared/currencies.js";
@@ -166,9 +168,9 @@ router.post("/", requireAuth, async (req, res, next) => {
           `insert into payments
              (user_id, plan_id, amount, currency, base_amount_usd, base_currency, country,
               payment_currency, local_amount, fx_rate, fx_captured_at, fx_source,
-              status, method, description, reference, charged_amount, token_limit, underlying_cost)
+              status, method, description, reference, charged_amount, token_limit, underlying_cost, provider)
            values ($1, $2, $3, 'USD', $3, 'USD', $4, $5, $6, $7, $8, $9,
-                   'pending', $10, $11, $12, $13, $14, $15)
+                   'pending', $10, $11, $12, $13, $14, $15, $16)
            returning *`,
           [
             req.user.id,
@@ -180,21 +182,22 @@ router.post("/", requireAuth, async (req, res, next) => {
             quote.rate,
             quote.capturedAt,
             quote.source,
-            paystackEnabled() ? "paystack" : "transfer",
+            onlineEnabled() ? onlineProvider() : "transfer",
             description,
             reference,
             customerAmount,
             plan.token_limit,
             underlyingCost,
+            onlineEnabled() ? onlineProvider() : "",
           ]
         );
 
     let authorizationUrl = "";
     let onlineError = "";
 
-    if (paystackEnabled()) {
+    if (onlineEnabled()) {
       try {
-        const init = await initializePaystack({
+        const init = await initializeOnlinePayment({
           email: req.user.email,
           payment,
           plan,
@@ -202,9 +205,9 @@ router.post("/", requireAuth, async (req, res, next) => {
         });
         authorizationUrl = init.authorizationUrl;
       } catch (error) {
-        console.error("[payments] paystack initialize failed:", error.message);
+        console.error(`[payments] ${onlineProvider()} initialize failed:`, error.message);
         onlineError = /currency/i.test(error.message || "")
-          ? `Your Paystack account is not enabled to charge ${quote.currency}. Use the bank transfer details below, or pay in USD. (${error.message})`
+          ? `Your ${onlineProvider()} account is not enabled to charge ${quote.currency}. Use the bank transfer details below, or pay in USD. (${error.message})`
           : error.message;
       }
     }
@@ -253,15 +256,16 @@ router.post("/payments/:id/verify", requireAuth, async (req, res, next) => {
     if (payment.status === "paid") {
       return res.json({ ...(await subscriptionSummary(req.user.id)), payments: await paymentsFor(req.user.id), message: "This payment is already verified." });
     }
-    if (!paystackEnabled()) {
+    if (!onlineEnabled()) {
       return res.status(400).json({
         error: "Online confirmation is not available. Submit your transfer reference and the team will verify it.",
         code: "NO_ONLINE_VERIFICATION",
       });
     }
 
-    const data = await verifyPaystack(payment.reference);
-    const paid = String(data.status || "").toLowerCase() === "success";
+    const provider = onlineProvider();
+    const data = await verifyOnlinePayment(payment);
+    const paid = providerSaysPaid(data);
     if (!paid) {
       return res.status(400).json({
         error: "The payment has not been completed yet. Finish the payment and try again.",
@@ -277,15 +281,29 @@ router.post("/payments/:id/verify", requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: check.error, code: check.code });
     }
 
+    const providerReference = String(data.providerReference || data.reference || payment.reference);
+    /* One provider transaction can only pay one invoice. */
+    const used = await one(
+      "select id, reference from payments where provider = $1 and provider_reference = $2 and id <> $3 limit 1",
+      [provider, providerReference, payment.id]
+    );
+    if (used) {
+      console.error(`[payments] provider reference ${providerReference} already paid invoice ${used.reference}`);
+      return res.status(409).json({
+        error: `That ${provider} payment has already been used for another invoice (${used.reference}). Nothing was activated; the SBD team will reconcile it.`,
+        code: "PAYMENT_ALREADY_USED",
+      });
+    }
+
     await query(
       `update payments
-          set provider = 'paystack',
+          set provider = $3,
               provider_reference = $2,
               currency = coalesce(nullif(currency, ''), 'USD')
         where id = $1`,
-      [payment.id, String(data.reference || payment.reference)]
+      [payment.id, providerReference, provider]
     );
-    await activatePayment({ ...payment, status: payment.status }, { method: "paystack" });
+    await activatePayment({ ...payment, status: payment.status }, { method: provider });
     res.json({
       ...(await subscriptionSummary(req.user.id)),
       payments: await paymentsFor(req.user.id),

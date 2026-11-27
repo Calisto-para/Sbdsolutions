@@ -103,9 +103,6 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       return res.status(409).json({ error: "This chat is paused right now. Please contact the business directly." });
     }
 
-    const ownerBlocked = await messageAllowanceError(assistant.user_id);
-    if (ownerBlocked) return res.status(429).json({ error: ownerBlocked, code: "MESSAGE_LIMIT" });
-
     try {
       await requireActiveAiAccount(assistant.user_id);
     } catch (accountError) {
@@ -116,49 +113,205 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       .object({
         message: z.string().trim().min(1, "Type a message first.").max(2000),
         conversationId: z.string().uuid().optional(),
+        /* Stable per-browser identity, so a returning visitor resumes the same
+           conversation instead of starting another one. */
+        visitorId: z.string().trim().regex(/^[a-zA-Z0-9-]{8,64}$/).optional(),
+        /* Stable id for this one message: the key to safe retries. */
+        clientMessageId: z.string().trim().regex(/^[a-zA-Z0-9-]{4,80}$/).optional(),
       })
       .parse(req.body);
 
+    const visitorKey = body.visitorId || "";
+
+    /* A visitor who is already counted this month is never blocked by the
+       allowance, even when the limit is otherwise reached. */
+    const ownerBlocked = await messageAllowanceError(assistant.user_id, visitorKey);
+    if (ownerBlocked) return res.status(429).json({ error: ownerBlocked, code: "MESSAGE_LIMIT" });
+
     let conversation = null;
+
     if (body.conversationId) {
       conversation = await one(
         "select * from conversations where id = $1 and assistant_id = $2 and channel = 'widget'",
         [body.conversationId, assistant.id]
       );
-      if (!conversation) return res.status(404).json({ error: "Conversation not found." });
       /* An ended conversation is history: it is never continued, a new one starts. */
-      if (conversation.status === "resolved") {
+      if (conversation && conversation.status === "resolved") {
         return res.status(409).json({
           error: "This conversation has ended. Start a new chat to keep talking with us.",
           code: "CONVERSATION_ENDED",
+          conversationId: conversation.id,
         });
       }
     }
 
+    /* No usable id (first send, a refreshed page, a second tab, or an id the
+       browser no longer has): reuse this visitor's open conversation. */
+    if (!conversation && visitorKey) {
+      conversation = await one(
+        `select * from conversations
+          where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+          order by updated_at desc
+          limit 1`,
+        [assistant.id, visitorKey]
+      );
+    }
+
     if (!conversation) {
       conversation = await one(
-        `insert into conversations (user_id, assistant_id, title, channel)
-         values ($1, $2, $3, 'widget')
+        `insert into conversations (user_id, assistant_id, title, channel, visitor_key)
+         select $1, $2, $3, 'widget', $4
+          where $4 = '' or not exists (
+            select 1 from conversations
+             where assistant_id = $2 and visitor_key = $4 and channel = 'widget' and status = 'open'
+          )
          returning *`,
-        [assistant.user_id, assistant.id, body.message.slice(0, 70)]
+        [assistant.user_id, assistant.id, body.message.slice(0, 70), visitorKey]
       );
+      if (!conversation && visitorKey) {
+        conversation = await one(
+          `select * from conversations
+            where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+            order by updated_at desc limit 1`,
+          [assistant.id, visitorKey]
+        );
+      }
+    }
+    if (!conversation) return res.status(503).json({ error: "The chat is busy right now. Please try again." });
+
+    /* Adopt the identity on conversations created before the visitor id existed. */
+    if (visitorKey && !conversation.visitor_key) {
+      conversation = (await one(
+        "update conversations set visitor_key = $2 where id = $1 and visitor_key = '' returning *",
+        [conversation.id, visitorKey]
+      )) || conversation;
     }
 
     const details = extractDetails(body.message);
 
-    await query(
-      "insert into messages (conversation_id, role, content, author) values ($1, 'user', $2, 'visitor')",
-      [conversation.id, body.message]
+    /* Idempotent storage. A retried send (double click, retry after a dropped
+       reply, a slow connection) finds the stored message by its client id
+       instead of creating a second one and charging for another AI answer. */
+    const clientId = body.clientMessageId || `srv-${conversation.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    let replayed = false;
+    let userMessage = await one(
+      "select * from messages where conversation_id = $1 and client_id = $2",
+      [conversation.id, clientId]
     );
-    await query("update conversations set updated_at = now() where id = $1", [conversation.id]);
+
+    if (userMessage) {
+      replayed = true;
+    } else {
+      try {
+        userMessage = await one(
+          `insert into messages (conversation_id, role, content, author, client_id, status)
+           values ($1, 'user', $2, 'visitor', $3, 'pending')
+           on conflict (conversation_id, client_id) do nothing
+           returning *`,
+          [conversation.id, body.message, clientId]
+        );
+      } catch (error) {
+        if (error.code !== "23505") throw error;
+      }
+      if (!userMessage) {
+        userMessage = await one(
+          "select * from messages where conversation_id = $1 and client_id = $2",
+          [conversation.id, clientId]
+        );
+        replayed = true;
+      }
+      await query("update conversations set updated_at = now() where id = $1", [conversation.id]);
+    }
+
+    if (!userMessage) {
+      return res.status(500).json({ error: "We could not save that message. Please try again." });
+    }
+
+    const replyFor = (value = "") => ({
+      conversationId: conversation.id,
+      userMessageId: userMessage.id,
+      assistantMessageId: value?.id || null,
+      reply: value?.content ?? "",
+      replayed,
+      takeover: Boolean(conversation.takeover),
+    });
+
+    const existingReply = await one(
+      "select * from messages where conversation_id = $1 and reply_to = $2",
+      [conversation.id, userMessage.id]
+    );
+    if (existingReply) {
+      return res.json({
+        ...replyFor(existingReply),
+        conversationId: conversation.id,
+        reply: existingReply.content,
+        takeover: false,
+        leadCaptured: false,
+        leadAlerted: false,
+        chatEmailed: false,
+        confirmationSent: false,
+      });
+    }
+
+    /* The visitor's message is saved, so tell the business and capture the lead
+       now — before the assistant is called. A rate-limited or unavailable AI
+       no longer swallows the enquiry. */
+    let leadCaptured = false;
+    let notification = { alerted: false, acknowledged: false };
+    if (!replayed) {
+      try {
+        leadCaptured = await saveLead(assistant, conversation, details);
+        notification = leadCaptured
+          ? await notifyLead(assistant, conversation)
+          : { alerted: false, acknowledged: false };
+        if (await notifyChatStarted(assistant, conversation)) {
+          conversation.notified_at = new Date().toISOString();
+        }
+      } catch (error) {
+        console.error(`[widget] notification failed for ${conversation.id} — ${error.message}`);
+      }
+    }
 
     if (conversation.takeover) {
-      return res.json({ conversationId: conversation.id, reply: "", takeover: true });
+      await query("update messages set status = 'done' where id = $1", [userMessage.id]);
+      return res.json({ ...replyFor(), takeover: true });
+    }
+
+    /* A retry may arrive while the first request is still producing the answer.
+       Wait for that answer rather than generating a second one. */
+    if (replayed) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const late = await one(
+          "select * from messages where conversation_id = $1 and reply_to = $2",
+          [conversation.id, userMessage.id]
+        );
+        if (late) {
+          return res.json({
+            ...replyFor(late),
+            reply: late.content,
+            takeover: false,
+            leadCaptured: false,
+            leadAlerted: false,
+            chatEmailed: false,
+            confirmationSent: false,
+          });
+        }
+        const current = await one("select status from messages where id = $1", [userMessage.id]);
+        if (current && (current.status === "failed" || current.status === "done")) break;
+      }
+      const settled = await one("select status from messages where id = $1", [userMessage.id]);
+      if (settled && settled.status === "done") {
+        return res.json({ ...replyFor(), takeover: Boolean(conversation.takeover) });
+      }
+      if (!settled || settled.status !== "failed") {
+        return res.status(202).json({ ...replyFor(), pending: true });
+      }
     }
 
     const history = await query(
       `select role, content, author from messages
-        where conversation_id = $1
+        where conversation_id = $1 and status <> 'failed'
         order by created_at desc
         limit 12`,
       [conversation.id]
@@ -178,6 +331,8 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       channel: "widget",
     });
 
+    await query("update messages set status = 'processing' where id = $1", [userMessage.id]);
+
     let result;
     try {
       result = await complete({
@@ -190,38 +345,50 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
         ],
       });
     } catch (error) {
-      /* The visitor's message is already stored, so hand back the conversation
-         id: the widget adopts it and can retry without sending twice. */
+      /* The visitor's message is stored and marked failed, so a retry with the
+         same client id can try again without creating a duplicate. */
+      await query("update messages set status = 'failed' where id = $1", [userMessage.id]);
       if (error?.code === "AI_UNAVAILABLE") {
         return res.status(502).json({
           error: error.message,
           code: error.code,
           conversationId: conversation.id,
+          userMessageId: userMessage.id,
         });
       }
       throw error;
     }
 
-    const assistantMessage = await one(
-      "insert into messages (conversation_id, role, content, author) values ($1, 'assistant', $2, 'ai') returning id",
-      [conversation.id, result.text]
+    /* reply_to keeps one assistant answer per visitor message, even if two
+       requests race. Only the request that actually stored the answer pays. */
+    let assistantMessage = await one(
+      `insert into messages (conversation_id, role, content, author, reply_to)
+       values ($1, 'assistant', $2, 'ai', $3)
+       on conflict (conversation_id, reply_to) do nothing
+       returning id, content`,
+      [conversation.id, result.text, userMessage.id]
     );
 
-    await recordAiCost(assistant.user_id, result.usage);
+    if (assistantMessage) {
+      await recordAiCost(assistant.user_id, result.usage);
+    } else {
+      assistantMessage = await one(
+        "select id, content from messages where conversation_id = $1 and reply_to = $2",
+        [conversation.id, userMessage.id]
+      );
+    }
 
-    const lead = await saveLead(assistant, conversation, details);
-    const notified = lead ? await notifyLead(assistant, conversation) : { alerted: false, acknowledged: false };
-    /* A lead alert already carries this conversation; otherwise email the owner
-       on the first message so nothing lives only in the dashboard. */
-    const started = notified.alerted ? true : await notifyChatStarted(assistant, conversation);
+    await query("update messages set status = 'done' where id = $1", [userMessage.id]);
+
+    /* The business was already told about this message above, so this call only
+       reports whether the notification actually went out. */
     res.json({
-      conversationId: conversation.id,
-      assistantMessageId: assistantMessage?.id || null,
-      reply: result.text,
-      leadCaptured: lead,
-      leadAlerted: notified.alerted,
-      chatEmailed: started,
-      confirmationSent: notified.acknowledged,
+      ...replyFor(assistantMessage),
+      reply: assistantMessage?.content || result.text,
+      leadCaptured,
+      leadAlerted: notification.alerted,
+      chatEmailed: notification.alerted || Boolean(conversation.notified_at),
+      confirmationSent: notification.acknowledged,
     });
   } catch (error) {
     next(error);
@@ -406,6 +573,7 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
     const body = z
       .object({
         conversationId: z.string().uuid().optional(),
+        visitorId: z.string().trim().regex(/^[a-zA-Z0-9-]{8,64}$/).optional(),
         name: z.string().trim().max(120).optional().default(""),
         email: z.string().trim().max(254).optional().default(""),
         phone: z.string().trim().max(40).optional().default(""),
@@ -427,12 +595,22 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
         [body.conversationId, assistant.id]
       );
     }
+    /* Details submitted without an id belong to this visitor's open chat, if
+       they have one — never to a brand-new duplicate conversation. */
+    if (!conversation && body.visitorId) {
+      conversation = await one(
+        `select * from conversations
+          where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+          order by updated_at desc limit 1`,
+        [assistant.id, body.visitorId]
+      );
+    }
     if (!conversation) {
       conversation = await one(
-        `insert into conversations (user_id, assistant_id, title, channel)
-         values ($1, $2, $3, 'widget')
+        `insert into conversations (user_id, assistant_id, title, channel, visitor_key)
+         values ($1, $2, $3, 'widget', $4)
          returning *`,
-        [assistant.user_id, assistant.id, body.service || "Website enquiry"]
+        [assistant.user_id, assistant.id, body.service || "Website enquiry", body.visitorId || ""]
       );
     }
 
@@ -451,6 +629,45 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
       message: notified.acknowledged
         ? "Thank you — your details are with the team and a confirmation is on its way to your inbox."
         : "Thank you — your details are with the team.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Everything this visitor has said to this assistant, so "Previous chats" is
+   available after a refresh, in another tab, or on a return visit — not only
+   in the tab where the chat was ended. */
+router.get("/:key/visitor/:visitorId/conversations", limiter, async (req, res, next) => {
+  try {
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+    if (!/^[a-zA-Z0-9-]{8,64}$/.test(String(req.params.visitorId || ""))) {
+      return res.json({ open: null, conversations: [] });
+    }
+
+    const rows = await query(
+      `select c.id, c.title, c.status, c.created_at, c.updated_at,
+              (select count(*)::int from messages m where m.conversation_id = c.id) as message_count,
+              (select m.content from messages m where m.conversation_id = c.id order by m.created_at desc limit 1) as last_message
+         from conversations c
+        where c.assistant_id = $1 and c.visitor_key = $2 and c.channel = 'widget'
+        order by c.updated_at desc
+        limit 10`,
+      [assistant.id, req.params.visitorId]
+    );
+
+    const open = rows.find((row) => row.status === "open");
+    res.json({
+      open: open ? { id: open.id, status: open.status } : null,
+      conversations: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        messageCount: row.message_count,
+        lastMessage: String(row.last_message || "").slice(0, 120),
+        updatedAt: row.updated_at,
+      })),
     });
   } catch (error) {
     next(error);

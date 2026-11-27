@@ -1,7 +1,13 @@
 /* SBD AI Solutions website chat widget.
    Install with one line:
    <script src="https://your-site/widget.js" data-assistant="PUBLIC_KEY" async></script>
-   It renders its own markup and styles, so it cannot clash with the host page. */
+   It renders its own markup and styles, so it cannot clash with the host page.
+
+   Conversation state lives on the server. The browser keeps only a stable
+   visitor id and the id of the conversation to reopen, so closing the widget,
+   refreshing the page or opening a second tab restores the same chat instead of
+   starting another one. Each message carries a client id, so a retried send is
+   recognised by the server and never stored or answered twice. */
 (function () {
   var script = document.currentScript;
   if (!script) return;
@@ -9,44 +15,74 @@
   if (!key) return;
 
   var base = script.src ? new URL(script.src).origin : "";
-  var storeKey = "sbd-chat-" + key;
-  var historyKey = "sbd-chat-history-" + key;
-  var conversationId = "";
-  var conversationStatus = "";
-  var viewingId = "";
-  var history = [];
+  var conversationStore = "sbd-chat-open-" + key;
+  var visitorStore = "sbd-visitor";
+  var pingStore = "sbd-chat-updated-" + key;
+  var memory = {};
+
   var open = false;
   var config = null;
   var polling = null;
-  var busy = false;
-  var typers = 0;
+  var attached = false;
 
-  function readStorage(name) {
+  function readStore(name) {
     try {
-      return sessionStorage.getItem(name) || "";
+      var value = window.localStorage.getItem(name);
+      if (value !== null) return value;
     } catch (error) {
-      return "";
+      /* fall through to the in-memory copy */
+    }
+    return Object.prototype.hasOwnProperty.call(memory, name) ? memory[name] : "";
+  }
+
+  function writeStore(name, value) {
+    memory[name] = value || "";
+    try {
+      if (value) window.localStorage.setItem(name, value);
+      else window.localStorage.removeItem(name);
+    } catch (error) {
+      /* private browsing — the session still works, it just cannot be restored */
     }
   }
 
-  function writeStorage(name, value) {
+  function newId() {
     try {
-      if (value) sessionStorage.setItem(name, value);
-      else sessionStorage.removeItem(name);
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
     } catch (error) {
-      /* private browsing — the chat simply starts fresh next time */
+      /* older browser */
     }
+    var bytes = [];
+    for (var i = 0; i < 16; i += 1) bytes.push(Math.floor(Math.random() * 256));
+    return (
+      "v-" +
+      Date.now().toString(36) +
+      "-" +
+      bytes
+        .map(function (value) {
+          return value.toString(16).padStart(2, "0");
+        })
+        .join("")
+    );
   }
 
-  conversationId = readStorage(storeKey);
-  try {
-    var savedHistory = JSON.parse(readStorage(historyKey) || "[]");
-    history = Array.isArray(savedHistory) ? savedHistory.filter(function (item) {
-      return item && typeof item.id === "string";
-    }) : [];
-  } catch (error) {
-    history = [];
+  /* One identity per browser, shared by every tab and kept across visits. It is
+     what makes customer counting per person and conversation reuse possible. */
+  var visitorId = readStore(visitorStore);
+  if (!visitorId) {
+    visitorId = newId();
+    writeStore(visitorStore, visitorId);
   }
+
+  var state = {
+    conversationId: readStore(conversationStore),
+    status: "",
+    takeover: false,
+    messages: [],
+    viewing: null,
+    history: [],
+    busy: false,
+    pending: null,
+  };
 
   function textColor(hex) {
     var value = String(hex || "").replace("#", "");
@@ -82,7 +118,7 @@
     ".sbdw-tool:hover{background:#f2f7ff}",
     ".sbdw-tool[disabled]{opacity:.55;cursor:not-allowed}",
     ".sbdw-tool--primary{color:#fff;border-color:transparent}",
-    ".sbdw-history{display:none;flex-direction:column;gap:6px;padding:10px 12px;background:#fbfdff;border-bottom:1px solid #e6eefb}",
+    ".sbdw-history{display:none;flex-direction:column;gap:6px;padding:10px 12px;background:#fbfdff;border-bottom:1px solid #e6eefb;max-height:190px;overflow-y:auto}",
     ".sbdw-history.is-open{display:flex}",
     ".sbdw-history-title{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5a6c88}",
     ".sbdw-history-item{text-align:left;border:1px solid #e3ebfa;background:#fff;border-radius:9px;padding:7px 9px;font:inherit;font-size:12px;cursor:pointer;color:#0b1f3a}",
@@ -98,6 +134,9 @@
     ".sbdw-typing span:nth-child(2){animation-delay:.15s}.sbdw-typing span:nth-child(3){animation-delay:.3s}",
     "@keyframes sbdw-typing{0%,80%,100%{transform:translateY(0);opacity:.45}40%{transform:translateY(-4px);opacity:1}}",
     ".sbdw-note{font-size:12px;color:#40506b;align-self:center;text-align:center}",
+    ".sbdw-note--team{background:#e8eefc;border-radius:9px;padding:7px 10px;align-self:stretch;text-align:left;color:#0b1f3a;font-weight:600}",
+    ".sbdw-retry{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;background:#fff4f2;border:1px solid #f5c9c2;border-radius:9px;padding:8px 10px;align-self:stretch;font-size:12px;color:#8a2c1d}",
+    ".sbdw-retry button{border:0;border-radius:7px;padding:5px 10px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;background:#0b5cff;color:#fff}",
     ".sbdw-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e6eefb;background:#fff}",
     ".sbdw-input{flex:1;border:1px solid #cfdcf3;border-radius:10px;padding:9px 11px;font:inherit;min-width:0}",
     ".sbdw-input[disabled]{background:#f4f7fc;color:#7c8aa3}",
@@ -137,7 +176,6 @@
   head.appendChild(headText);
   head.appendChild(close);
 
-  /* Chat controls sit at the top of the panel, where visitors look first. */
   var tools = el("div", "sbdw-tools");
   var newChatButton = el("button", "sbdw-tool", "New chat");
   newChatButton.type = "button";
@@ -212,34 +250,493 @@
   function addMessage(message) {
     var node = el("div", "sbdw-msg sbdw-msg--" + kindFor(message), message.content);
     log.appendChild(node);
-    log.scrollTop = log.scrollHeight;
     return node;
   }
 
-  function addNote(text) {
-    log.appendChild(el("div", "sbdw-note", text));
+  function addNote(text, className) {
+    log.appendChild(el("div", className || "sbdw-note", text));
+  }
+
+  function scroll() {
     log.scrollTop = log.scrollHeight;
   }
 
-  /* Three animated dots while the assistant is thinking, so a slow reply never
-     looks like nothing happened. */
+  function isEnded() {
+    /* Only the server can end a conversation. Nothing in the browser sets this
+       locally, so a failed request can never leave the chat looking finished. */
+    return state.status === "resolved";
+  }
+
+  function isLocked() {
+    return Boolean(state.viewing) || isEnded();
+  }
+
+  function paintControls() {
+    endChatButton.style.display =
+      state.conversationId && !isEnded() && !state.viewing ? "inline-flex" : "none";
+    historyButton.style.display = state.history.length ? "inline-flex" : "none";
+    historyButton.textContent = "Previous chats (" + state.history.length + ")";
+
+    input.disabled = isLocked() || state.busy;
+    send.disabled = isLocked() || state.busy;
+    input.placeholder = state.viewing
+      ? "Viewing a previous conversation"
+      : isEnded()
+        ? "This chat has ended — start a new chat"
+        : "Type your message…";
+    send.textContent = state.busy ? "Sending…" : "Send";
+  }
+
+  /* The whole transcript is rebuilt from one source of truth every time, so a
+     message cannot appear twice and the welcome line cannot be repeated. */
+  function render(note) {
+    log.innerHTML = "";
+    var messages = state.viewing ? state.viewing.messages : state.messages;
+
+    if (!messages.length) {
+      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
+    } else {
+      messages.forEach(addMessage);
+    }
+
+    if (!state.viewing && state.takeover) {
+      addNote("A member of our team has joined this chat — replies now come from the team.", "sbdw-note sbdw-note--team");
+    }
+    if (!state.viewing && isEnded()) {
+      addNote("This conversation has ended. Your chat is saved under Previous chats.");
+    }
+    if (!state.viewing && state.pending) {
+      var box = el("div", "sbdw-retry");
+      box.appendChild(el("span", "", "Not sent: “" + state.pending.text.slice(0, 80) + "”"));
+      var retry = el("button", "", "Try again");
+      retry.type = "button";
+      retry.addEventListener("click", function () {
+        var pending = state.pending;
+        state.pending = null;
+        sendMessage(pending.text, pending.clientId);
+      });
+      box.appendChild(retry);
+      log.appendChild(box);
+    }
+    if (note) addNote(note);
+
+    paintControls();
+    scroll();
+  }
+
+  function loadHistory() {
+    if (!visitorId) return Promise.resolve();
+    return fetch(base + "/api/widget/" + key + "/visitor/" + encodeURIComponent(visitorId) + "/conversations")
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (!data) return;
+        state.history = data.conversations || [];
+        if (!state.conversationId && data.open && data.open.id) {
+          state.conversationId = data.open.id;
+          writeStore(conversationStore, state.conversationId);
+          return loadConversation();
+        }
+        paintHistory();
+        paintControls();
+      })
+      .catch(function () {});
+  }
+
+  function paintHistory() {
+    historyBox.innerHTML = "";
+    if (!state.history.length) {
+      historyBox.className = "sbdw-history";
+      return;
+    }
+    historyBox.appendChild(el("span", "sbdw-history-title", "Earlier conversations"));
+    state.history.forEach(function (item) {
+      var button = el("button", "sbdw-history-item");
+      button.type = "button";
+      button.appendChild(el("strong", "", item.title || "Website chat"));
+      var when = item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "";
+      var ending = item.status === "resolved" ? "closed" : "open";
+      button.appendChild(el("span", "", when + " · " + ending + " · tap to read"));
+      button.addEventListener("click", function () {
+        viewConversation(item);
+      });
+      historyBox.appendChild(button);
+    });
+  }
+
+  function viewConversation(item) {
+    setStatus("");
+    historyBox.className = "sbdw-history";
+    state.viewing = { id: item.id, title: item.title, messages: [] };
+    render("Loading that conversation…");
+    fetch(base + "/api/widget/" + key + "/conversation/" + encodeURIComponent(item.id))
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (!data) {
+          state.viewing = null;
+          setStatus("That conversation is no longer available.");
+          render();
+          return;
+        }
+        state.viewing.messages = data.messages || [];
+        render(
+          data.status === "resolved"
+            ? "This conversation has ended. Start a new chat whenever you are ready."
+            : "You are reading an earlier conversation. Start a new chat to keep talking."
+        );
+      })
+      .catch(function () {
+        state.viewing = null;
+        setStatus("Could not open that conversation.");
+        render();
+      });
+  }
+
+  function loadConversation() {
+    if (!state.conversationId) {
+      render();
+      return Promise.resolve();
+    }
+    return fetch(base + "/api/widget/" + key + "/conversation/" + encodeURIComponent(state.conversationId))
+      .then(function (response) {
+        if (response.status === 404) return { gone: true };
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (!data) return;
+        if (data.gone) {
+          state.conversationId = "";
+          state.messages = [];
+          state.status = "";
+          state.takeover = false;
+          writeStore(conversationStore, "");
+          render();
+          return;
+        }
+        state.status = data.status || "";
+        state.takeover = Boolean(data.takeover);
+        state.messages = data.messages || [];
+        if (state.status === "resolved") stopPoll();
+        render();
+      })
+      .catch(function () {});
+  }
+
+  function rememberEnded(id, title) {
+    if (!id) return;
+    state.history = state.history.filter(function (item) {
+      return item.id !== id;
+    });
+    state.history.unshift({
+      id: id,
+      title: title || "Website chat",
+      status: "resolved",
+      updatedAt: new Date().toISOString(),
+    });
+    paintHistory();
+  }
+
+  function endRemotely(id) {
+    if (!id) return Promise.resolve(null);
+    return fetch(base + "/api/widget/" + key + "/conversation/" + id + "/end", { method: "POST" })
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  function conversationTitle() {
+    var first = state.messages.filter(function (message) {
+      return message.role === "user";
+    })[0];
+    return first ? first.content.slice(0, 60) : "Website chat";
+  }
+
+  function startFresh(previousEnded) {
+    var previous = state.conversationId;
+    state.conversationId = "";
+    state.status = "";
+    state.takeover = false;
+    state.messages = [];
+    state.viewing = null;
+    state.pending = null;
+    state.busy = false;
+    writeStore(conversationStore, "");
+    stopPoll();
+    setStatus("");
+    if (previousEnded && previous) rememberEnded(previous, conversationTitle());
+    render();
+    input.focus();
+  }
+
+  function broadcast() {
+    writeStore(pingStore, String(Date.now()));
+  }
+
+  function stopPoll() {
+    if (polling) {
+      clearInterval(polling);
+      polling = null;
+    }
+  }
+
+  function poll() {
+    if (polling || !state.conversationId) return;
+    polling = setInterval(function () {
+      if (!open || !state.conversationId || isEnded() || state.viewing) return;
+      loadConversation();
+    }, 6000);
+  }
+
+  function showPanel() {
+    open = true;
+    panel.style.display = "flex";
+    bubble.setAttribute("aria-label", "Close chat");
+    paintControls();
+    if (state.conversationId) {
+      loadConversation().then(function () {
+        if (!isEnded()) poll();
+      });
+    } else {
+      loadHistory();
+      render();
+    }
+    input.focus();
+  }
+
+  function hidePanel() {
+    open = false;
+    panel.style.display = "none";
+    bubble.setAttribute("aria-label", "Open chat");
+  }
+
+  bubble.addEventListener("click", function () {
+    if (open) hidePanel();
+    else showPanel();
+  });
+  close.addEventListener("click", hidePanel);
+
+  detailsLink.addEventListener("click", function () {
+    details.className = details.className.indexOf("is-open") >= 0 ? "sbdw-details" : "sbdw-details is-open";
+  });
+
+  newChatButton.addEventListener("click", function () {
+    var previous = state.conversationId;
+    /* Only a conversation that already exists needs ending; an untouched chat
+       simply resets. */
+    if (previous) {
+      endRemotely(previous);
+      rememberEnded(previous, conversationTitle());
+    }
+    startFresh(false);
+  });
+
+  endChatButton.addEventListener("click", function () {
+    setStatus("");
+    if (!state.conversationId) return;
+    var id = state.conversationId;
+    endChatButton.disabled = true;
+    endRemotely(id)
+      .then(function (data) {
+        if (!data || data.status !== "resolved") {
+          throw new Error("We could not end the chat right now. Please try again.");
+        }
+        state.status = "resolved";
+        rememberEnded(id, conversationTitle());
+        stopPoll();
+        /* The closed chat stays readable in this session and in Previous chats,
+           but a reload starts a genuinely new conversation instead of
+           reopening a conversation that has ended. */
+        writeStore(conversationStore, "");
+        render();
+      })
+      .catch(function (error) {
+        setStatus(error.message);
+      })
+      .then(function () {
+        endChatButton.disabled = false;
+        paintControls();
+      });
+  });
+
+  function post(path, body) {
+    return fetch(base + path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        if (!response.ok) {
+          var error = new Error(data.error || "Something went wrong. Please try again.");
+          error.code = data.code || "";
+          error.data = data;
+          throw error;
+        }
+        return data;
+      });
+    });
+  }
+
   function showTyping() {
-    typers += 1;
-    if (typers > 1) return;
+    if (log.querySelector("[data-typing]")) return;
     var typing = el("div", "sbdw-msg sbdw-msg--ai sbdw-typing");
     typing.setAttribute("data-typing", "1");
     typing.setAttribute("aria-label", "Assistant is typing");
     typing.innerHTML = "<span></span><span></span><span></span>";
     log.appendChild(typing);
-    log.scrollTop = log.scrollHeight;
+    scroll();
   }
 
   function hideTyping() {
-    typers = Math.max(0, typers - 1);
-    if (typers > 0) return;
     var typing = log.querySelector("[data-typing]");
     if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
   }
+
+  /* Every send uses one client id for the lifetime of that message, including
+     retries, so the server can recognise a repeat and answer it once. */
+  function sendMessage(text, clientId) {
+    if (!text || state.busy || isLocked()) return;
+    var messageId = clientId || newId();
+    state.busy = true;
+    state.pending = null;
+    setStatus("");
+
+    if (!clientId) {
+      state.messages = state.messages.concat([{ role: "user", author: "visitor", content: text }]);
+    }
+    render();
+    showTyping();
+    paintControls();
+
+    post("/api/widget/" + key + "/chat", {
+      message: text,
+      conversationId: state.conversationId || undefined,
+      visitorId: visitorId,
+      clientMessageId: messageId,
+    })
+      .then(function (data) {
+        hideTyping();
+        state.conversationId = data.conversationId || state.conversationId;
+        writeStore(conversationStore, state.conversationId);
+        state.status = "open";
+        state.takeover = Boolean(data.takeover);
+        state.pending = null;
+        if (data.pending) {
+          /* The first attempt is still producing the answer; the poll collects
+             it. Nothing is sent twice. */
+          setStatus("Still working on a reply — this can take a moment.");
+        } else if (data.confirmationSent) {
+          setStatus("");
+        }
+        return loadConversation().then(function () {
+          if (state.takeover) poll();
+          broadcast();
+          loadHistory();
+        });
+      })
+      .catch(function (error) {
+        hideTyping();
+        if (error.code === "CONVERSATION_ENDED") {
+          state.status = "resolved";
+          rememberEnded(state.conversationId, conversationTitle());
+          stopPoll();
+          setStatus(error.message);
+          render();
+          return;
+        }
+        /* The message may or may not have reached the server. Keeping its text
+           and client id makes "try again" safe either way. */
+        state.pending = { text: text, clientId: messageId };
+        if (error.data && error.data.conversationId) {
+          state.conversationId = error.data.conversationId;
+          writeStore(conversationStore, state.conversationId);
+        }
+        setStatus(error.message);
+        var note = "";
+        if (error.code === "AI_UNAVAILABLE") {
+          details.className = "sbdw-details is-open";
+          note =
+            "Our assistant cannot reply at this moment. Your message is saved — leave your details and the team will get back to you.";
+        }
+        return loadConversation().then(function () {
+          render(note);
+        });
+      })
+      .then(function () {
+        state.busy = false;
+        paintControls();
+      });
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var message = input.value.trim();
+    if (!message) return;
+    input.value = "";
+    sendMessage(message, "");
+  });
+
+  details.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (state.busy || isLocked()) return;
+    state.busy = true;
+    setStatus("");
+    paintControls();
+    post("/api/widget/" + key + "/lead", {
+      conversationId: state.conversationId || undefined,
+      visitorId: visitorId,
+      name: dName.value.trim(),
+      email: dEmail.value.trim(),
+      phone: dPhone.value.trim(),
+      service: dService.value.trim(),
+    })
+      .then(function (data) {
+        state.conversationId = data.conversationId || state.conversationId;
+        writeStore(conversationStore, state.conversationId);
+        details.className = "sbdw-details";
+        render(
+          data.confirmationSent
+            ? "Thank you — the team has your details and we emailed you a confirmation."
+            : "Thank you — the team has your details."
+        );
+        loadHistory();
+      })
+      .catch(function (error) {
+        setStatus(error.message);
+      })
+      .then(function () {
+        state.busy = false;
+        paintControls();
+      });
+  });
+
+  /* A second tab shares the same visitor and conversation. When one tab sends a
+     message or starts a conversation, the others reload instead of diverging. */
+  window.addEventListener("storage", function (event) {
+    if (!event.key) return;
+    if (event.key === pingStore || event.key === conversationStore) {
+      var stored = readStore(conversationStore);
+      if (stored !== state.conversationId) {
+        state.conversationId = stored;
+        state.viewing = null;
+        state.messages = [];
+      }
+      if (event.key === pingStore) loadHistory();
+      if (state.conversationId) loadConversation();
+      else render();
+    }
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && open && state.conversationId && !isEnded()) {
+      loadConversation();
+    }
+  });
 
   function paint() {
     var bg = config.color || "#0b5cff";
@@ -261,370 +758,19 @@
     root.className = "sbdw-root sbdw-root--" + (config.position === "left" ? "left" : "right");
   }
 
-  function stopPoll() {
-    if (polling) {
-      clearInterval(polling);
-      polling = null;
-    }
-  }
-
-  function isEnded() {
-    return conversationStatus === "resolved";
-  }
-
-  function paintControls() {
-    var showEnd = Boolean(conversationId) && !isEnded() && !viewingId;
-    endChatButton.style.display = showEnd ? "inline-flex" : "none";
-    historyButton.style.display = history.length ? "inline-flex" : "none";
-    historyButton.textContent = "Previous chats (" + history.length + ")";
-    var locked = isEnded() || Boolean(viewingId);
-    input.disabled = locked;
-    send.disabled = locked;
-    input.placeholder = viewingId
-      ? "Viewing a previous conversation"
-      : isEnded()
-        ? "This chat has ended — start a new chat"
-        : "Type your message…";
-  }
-
-  function renderTranscript(messages, note) {
-    log.innerHTML = "";
-    if (!messages.length) {
-      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
-    } else {
-      messages.forEach(addMessage);
-    }
-    if (note) addNote(note);
-    paintControls();
-  }
-
-  function loadHistory() {
-    historyBox.innerHTML = "";
-    if (!history.length) {
-      historyBox.className = "sbdw-history";
-      paintControls();
-      return;
-    }
-    historyBox.appendChild(el("span", "sbdw-history-title", "Earlier conversations"));
-    history.slice().reverse().forEach(function (item) {
-      var button = el("button", "sbdw-history-item");
-      button.type = "button";
-      var label = el("strong", "", item.title || "Website chat");
-      button.appendChild(label);
-      var when = "";
-      try {
-        when = new Date(item.endedAt).toLocaleString();
-      } catch (error) {
-        when = "";
-      }
-      button.appendChild(el("span", "", when + " · tap to read"));
-      button.addEventListener("click", function () {
-        viewingId = item.id;
-        historyBox.className = "sbdw-history";
-        setStatus("");
-        fetch(base + "/api/widget/" + key + "/conversation/" + item.id)
-          .then(function (response) {
-            return response.ok ? response.json() : null;
-          })
-          .then(function (data) {
-            if (!data) {
-              setStatus("That conversation is no longer available.");
-              viewingId = "";
-              paintControls();
-              return;
-            }
-            renderTranscript(
-              data.messages || [],
-              "This conversation has ended. Start a new chat whenever you are ready."
-            );
-          })
-          .catch(function () {
-            setStatus("Could not open that conversation.");
-            viewingId = "";
-            paintControls();
-          });
-      });
-      historyBox.appendChild(button);
-    });
-    paintControls();
-  }
-
-  function rememberConversation(id, title) {
-    if (!id) return;
-    history = history.filter(function (item) {
-      return item.id !== id;
-    });
-    history.push({ id: id, title: title || "Website chat", endedAt: new Date().toISOString() });
-    if (history.length > 5) history = history.slice(history.length - 5);
-    writeStorage(historyKey, JSON.stringify(history));
-    loadHistory();
-  }
-
-  function endRemotely(id) {
-    if (!id) return Promise.resolve();
-    return fetch(base + "/api/widget/" + key + "/conversation/" + id + "/end", { method: "POST" }).catch(
-      function () {}
-    );
-  }
-
-  function startFresh(note) {
-    viewingId = "";
-    conversationId = "";
-    conversationStatus = "";
-    writeStorage(storeKey, "");
-    stopPoll();
-    log.innerHTML = "";
-    addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
-    if (note) addNote(note);
-    paintControls();
-    setStatus("");
-    historyBox.className = "sbdw-history";
-    input.focus();
-  }
-
-  function showPanel() {
-    open = true;
-    panel.style.display = "flex";
-    bubble.setAttribute("aria-label", "Close chat");
-    paintControls();
-    input.focus();
-    if (conversationId) {
-      loadConversation().then(function () {
-        if (!isEnded()) poll();
-      });
-    } else if (!log.childNodes.length) {
-      addMessage({ role: "assistant", author: "ai", content: config.welcomeMessage });
-    }
-  }
-
-  function hidePanel() {
-    open = false;
-    panel.style.display = "none";
-    bubble.setAttribute("aria-label", "Open chat");
-  }
-
-  bubble.addEventListener("click", function () {
-    if (open) hidePanel();
-    else showPanel();
-  });
-  close.addEventListener("click", hidePanel);
-
-  detailsLink.addEventListener("click", function () {
-    details.className = details.className.indexOf("is-open") >= 0 ? "sbdw-details" : "sbdw-details is-open";
-  });
-
-  newChatButton.addEventListener("click", function () {
-    var previous = conversationId;
-    if (previous) {
-      endRemotely(previous);
-      rememberConversation(previous);
-    }
-    startFresh("Started a new conversation.");
-  });
-
-  endChatButton.addEventListener("click", function () {
-    setStatus("");
-    if (!conversationId) {
-      startFresh("Conversation ended. Thank you for chatting.");
-      return;
-    }
-    var id = conversationId;
-    endChatButton.disabled = true;
-    endRemotely(id)
-      .then(function (response) {
-        if (response && !response.ok) throw new Error("Could not end the chat right now.");
-        conversationStatus = "resolved";
-        rememberConversation(id, conversationTitle());
-        renderTranscript(
-          currentMessages,
-          "Conversation ended — thank you for chatting with us. Your chat is saved under Previous chats."
-        );
-      })
-      .catch(function (error) {
-        setStatus(error.message);
-      })
-      .then(function () {
-        endChatButton.disabled = false;
-        paintControls();
-      });
-  });
-
-  function conversationTitle() {
-    var first = currentMessages.filter(function (message) {
-      return message.role === "user";
-    })[0];
-    var text = first ? first.content : "";
-    return text ? text.slice(0, 60) : "Website chat";
-  }
-
-  function post(path, body) {
-    return fetch(base + path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).then(function (response) {
-      return response.json().then(function (data) {
-        if (!response.ok) {
-          var error = new Error(data.error || "Something went wrong. Please try again.");
-          error.code = data.code || "";
-          error.data = data;
-          throw error;
-        }
-        return data;
-      });
-    });
-  }
-
-  /* The transcript is the single source of truth: after every reply and every
-     poll the log is rebuilt from the server's messages, so a message can never
-     appear twice. */
-  var currentMessages = [];
-  var loading = null;
-
-  function loadConversation() {
-    if (!conversationId) return Promise.resolve();
-    if (loading) return loading;
-    loading = fetch(base + "/api/widget/" + key + "/conversation/" + conversationId)
-      .then(function (response) {
-        return response.ok ? response.json() : null;
-      })
-      .then(function (data) {
-        loading = null;
-        if (!data) return;
-        conversationStatus = data.status || "";
-        currentMessages = data.messages || [];
-        renderTranscript(
-          currentMessages,
-          isEnded() ? "This conversation has ended. Start a new chat whenever you are ready." : ""
-        );
-        if (isEnded()) {
-          rememberConversation(conversationId, conversationTitle());
-          stopPoll();
-        }
-      })
-      .catch(function () {
-        loading = null;
-      });
-    return loading;
-  }
-
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
-    var message = input.value.trim();
-    if (!message || busy || isEnded() || viewingId) return;
-    busy = true;
-    send.disabled = true;
-    setStatus("");
-    input.value = "";
-    addMessage({ role: "user", content: message });
-    showTyping();
-
-    post("/api/widget/" + key + "/chat", {
-      message: message,
-      conversationId: conversationId || undefined,
-    })
-      .then(function (data) {
-        hideTyping();
-        conversationId = data.conversationId;
-        conversationStatus = "";
-        takeover = Boolean(data.takeover);
-        writeStorage(storeKey, conversationId);
-        paintControls();
-        if (data.confirmationSent) {
-          addNote("We emailed you a confirmation — your message has reached the team.");
-        }
-        return loadConversation();
-      })
-      .then(function () {
-        if (takeover) poll();
-      })
-      .catch(function (error) {
-        hideTyping();
-        if (error.code === "CONVERSATION_ENDED") {
-          conversationStatus = "resolved";
-          rememberConversation(conversationId, conversationTitle());
-          paintControls();
-          setStatus(error.message);
-          addNote("Your message was not delivered.");
-          return;
-        }
-        setStatus(error.message);
-        /* The server stored the visitor's message before the assistant call
-           failed and told us which conversation it belongs to. Adopt it, so
-           the transcript is right and nothing has to be sent twice. */
-        if (error.code === "AI_UNAVAILABLE" && error.data && error.data.conversationId) {
-          conversationId = error.data.conversationId;
-          writeStorage(storeKey, conversationId);
-          return loadConversation().then(function () {
-            addNote(
-              "Our assistant cannot reply at this moment. Your message is saved — leave your details and the team will get back to you."
-            );
-            details.className = "sbdw-details is-open";
-            paintControls();
-          });
-        }
-        addNote("Your message was not delivered.");
-      })
-      .then(function () {
-        busy = false;
-        send.disabled = isEnded() || Boolean(viewingId);
-      });
-  });
-
-  details.addEventListener("submit", function (event) {
-    event.preventDefault();
-    if (busy || isEnded() || viewingId) return;
-    busy = true;
-    setStatus("");
-    post("/api/widget/" + key + "/lead", {
-      conversationId: conversationId || undefined,
-      name: dName.value.trim(),
-      email: dEmail.value.trim(),
-      phone: dPhone.value.trim(),
-      service: dService.value.trim(),
-    })
-      .then(function (data) {
-        conversationId = data.conversationId;
-        writeStorage(storeKey, conversationId);
-        paintControls();
-        addNote(
-          data.confirmationSent
-            ? "Thank you — the team has your details and we emailed you a confirmation."
-            : "Thank you — the team has your details."
-        );
-        details.className = "sbdw-details";
-      })
-      .catch(function (error) {
-        setStatus(error.message);
-      })
-      .then(function () {
-        busy = false;
-      });
-  });
-
-  var takeover = false;
-
-  function poll() {
-    if (polling || !conversationId) return;
-    polling = setInterval(function () {
-      if (!open || !conversationId || isEnded()) return;
-      loadConversation();
-    }, 6000);
-  }
-
-  /* A cold server or a database still warming up answers 5xx for a few
-     seconds. Retry briefly instead of giving up, so the widget does not
-     silently vanish for the rest of the visit. */
-  var attached = false;
-
   function mount() {
     if (attached) return;
     attached = true;
     paint();
     document.head.appendChild(style);
     document.body.appendChild(root);
-    loadHistory();
-    if (conversationId) loadConversation();
+    paintHistory();
+    paintControls();
+    if (state.conversationId) {
+      loadConversation().then(loadHistory);
+    } else {
+      loadHistory();
+    }
   }
 
   function loadConfig(attempt) {

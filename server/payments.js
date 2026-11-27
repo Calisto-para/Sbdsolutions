@@ -9,14 +9,23 @@ import { toMinorUnits } from "../shared/currencies.js";
 
 export const paystackEnabled = () => Boolean(env.payments.paystack.secretKey);
 
+export const flutterwaveEnabled = () => Boolean(env.payments.flutterwave.secretKey);
+
+/* Flutterwave is preferred when configured; Paystack remains the fallback, so
+   an existing Paystack account keeps working untouched. */
+export const onlineProvider = () =>
+  flutterwaveEnabled() ? "flutterwave" : paystackEnabled() ? "paystack" : "";
+
+export const onlineEnabled = () => Boolean(onlineProvider());
+
 export const bankEnabled = () =>
   Boolean(env.payments.bank.accountNumber && env.payments.bank.accountName);
 
-export const paymentMethodsConfigured = () => paystackEnabled() || bankEnabled();
+export const paymentMethodsConfigured = () => onlineEnabled() || bankEnabled();
 
 export function paymentConfig() {
   return {
-    online: paystackEnabled() ? { provider: "paystack" } : null,
+    online: onlineEnabled() ? { provider: onlineProvider() } : null,
     bank: bankEnabled()
       ? {
           name: env.payments.bank.name,
@@ -112,6 +121,98 @@ export async function initializePaystack({ email, payment, plan, callbackUrl }) 
 
 export async function verifyPaystack(reference) {
   return paystack(`/transaction/verify/${encodeURIComponent(reference)}`);
+}
+
+/* Flutterwave's Standard API works the same way: the server creates a hosted
+   checkout for the exact local amount and later verifies it by our own
+   transaction reference. */
+async function flutterwave(path, options = {}) {
+  const response = await fetch(`${env.payments.flutterwave.apiUrl}${path}`, {
+    ...options,
+    headers: {
+      authorization: `Bearer ${env.payments.flutterwave.secretKey}`,
+      "content-type": "application/json",
+      ...(options.headers || {}),
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status === "error") {
+    throw new Error(data.message || `Flutterwave responded with HTTP ${response.status}`);
+  }
+  return data.data || {};
+}
+
+export async function initializeFlutterwave({ email, payment, plan, callbackUrl }) {
+  const currency = payment.payment_currency || "USD";
+  const amount = Number(payment.local_amount ?? payment.amount);
+  const reference = payment.reference;
+  const data = await flutterwave("/payments", {
+    method: "POST",
+    body: JSON.stringify({
+      tx_ref: reference,
+      amount,
+      currency,
+      redirect_url: callbackUrl,
+      customer: { email },
+      customizations: {
+        title: "SBD AI Solutions",
+        description: `${plan.name} plan`,
+      },
+      meta: {
+        planId: plan.id,
+        invoiceId: payment.id,
+        baseAmountUsd: Number(payment.base_amount_usd ?? payment.amount),
+        paymentCurrency: currency,
+        localAmount: amount,
+        fxRate: payment.fx_rate == null ? null : Number(payment.fx_rate),
+      },
+    }),
+  });
+  if (!data.link) throw new Error("Flutterwave did not return a payment link.");
+  return { authorizationUrl: data.link, reference };
+}
+
+/* Flutterwave reports amounts in major units (e.g. 20,489.35 NGN), unlike
+   Paystack's minor units. Both are normalised to a common shape so the
+   invoice check is identical for either provider. */
+export async function verifyFlutterwave(reference) {
+  const data = await flutterwave(
+    `/transactions/verify_by_reference?tx_ref=${encodeURIComponent(reference)}`
+  );
+  const currency = String(data.currency || "").toUpperCase();
+  return {
+    status: data.status,
+    amount: toMinorUnits(Number(data.amount || 0), currency || "USD"),
+    currency,
+    reference: data.tx_ref || reference,
+    providerReference: data.id == null ? "" : String(data.id),
+  };
+}
+
+/* One entry point for checkout, whichever provider is configured. */
+export async function initializeOnlinePayment(options) {
+  return onlineProvider() === "flutterwave"
+    ? initializeFlutterwave(options)
+    : initializePaystack(options);
+}
+
+export async function verifyOnlinePayment(payment) {
+  if (onlineProvider() === "flutterwave") return verifyFlutterwave(payment.reference);
+  const data = await verifyPaystack(payment.reference);
+  return {
+    status: data.status,
+    amount: Number(data.amount),
+    currency: String(data.currency || "").toUpperCase(),
+    reference: data.reference || payment.reference,
+    providerReference: data.reference || "",
+  };
+}
+
+/* Providers report success differently; this keeps the route readable. */
+export function providerSaysPaid(data) {
+  const status = String(data?.status || "").toLowerCase();
+  return status === "success" || status === "successful";
 }
 
 /* Applies a verified invoice: the subscription moves to the paid plan and the

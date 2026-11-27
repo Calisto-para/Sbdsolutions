@@ -88,7 +88,17 @@ app.get("/api/health", (req, res) => {
     },
     /* Which ways customers can pay. Booleans only — no keys or account numbers. */
     paymentMethods: {
-      online: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      online: Boolean(
+        process.env.FLUTTERWAVE_SECRET_KEY ||
+          process.env.FLW_SECRET_KEY ||
+          process.env.PAYSTACK_SECRET_KEY
+      ),
+      provider:
+        process.env.FLUTTERWAVE_SECRET_KEY || process.env.FLW_SECRET_KEY
+          ? "flutterwave"
+          : process.env.PAYSTACK_SECRET_KEY
+            ? "paystack"
+            : "",
       bank: Boolean(process.env.PAYMENT_ACCOUNT_NUMBER && process.env.PAYMENT_ACCOUNT_NAME),
     },
     /* Origin that verification and reset links use — safe to show, it is public. */

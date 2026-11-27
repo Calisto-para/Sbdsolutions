@@ -44,6 +44,13 @@ export const env = {
       /* Empty means: use the plan's own currency. */
       currency: process.env.PAYSTACK_CURRENCY || "",
     },
+    /* Flutterwave is the preferred online provider when its key is present;
+       otherwise Paystack is used. The key is only ever read on the server. */
+    flutterwave: {
+      secretKey: process.env.FLUTTERWAVE_SECRET_KEY || process.env.FLW_SECRET_KEY || "",
+      apiUrl: (process.env.FLUTTERWAVE_API_URL || "https://api.flutterwave.com/v3").replace(/\/$/, ""),
+      publicKey: process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.FLW_PUBLIC_KEY || "",
+    },
     /* Public account details shown on the checkout screen. */
     bank: {
       name: process.env.PAYMENT_BANK_NAME || "",

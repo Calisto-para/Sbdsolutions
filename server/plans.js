@@ -200,10 +200,17 @@ export async function usageFor(userId) {
           from messages m
           join conversations c on c.id = m.conversation_id
          where c.user_id = $1 and m.role = 'user' and m.created_at >= date_trunc('month', now())) as messages,
-       /* Monthly customer allowance counts each customer once, however many
-          messages they send. Known contacts are matched by email or phone;
-          otherwise the conversation stands in for one customer. */
-       (select count(distinct coalesce(nullif(c.visitor_email, ''), nullif(c.visitor_phone, ''), c.id::text))::int
+       /* Monthly customer allowance counts each person once, however many
+          conversations or messages they send. A person is identified by the
+          stable visitor id the widget keeps in the browser, then by a known
+          email or phone, and only an anonymous legacy chat falls back to the
+          conversation itself. */
+       (select count(distinct coalesce(
+                 nullif(c.visitor_key, ''),
+                 nullif(c.visitor_email, ''),
+                 nullif(c.visitor_phone, ''),
+                 c.id::text
+               ))::int
           from conversations c
           join messages m on m.conversation_id = c.id
          where c.user_id = $1
@@ -308,11 +315,29 @@ export async function subscriptionSummary(userId) {
    the widget/assistant being chatting with), so a busy widget is charged to
    the business's monthly visitor-message allowance, not to the visitor. */
 /* The monthly allowance counts unique customers, not messages. */
-export async function messageAllowanceError(userId) {
+export async function messageAllowanceError(userId, visitorKey = "") {
   const { plan } = await currentPlan(userId);
   const usage = await usageFor(userId);
   const limit = plan?.message_limit ?? 50;
   if (usage.customers < limit) return "";
+
+  /* The allowance is spent, but a customer who is already counted this month
+     must still be able to continue their conversation. */
+  if (visitorKey) {
+    const known = await one(
+      `select 1
+         from conversations c
+         join messages m on m.conversation_id = c.id
+        where c.user_id = $1
+          and (c.visitor_key = $2 or c.visitor_email = $2 or c.visitor_phone = $2)
+          and m.role = 'user'
+          and m.created_at >= date_trunc('month', now())
+        limit 1`,
+      [userId, visitorKey]
+    );
+    if (known) return "";
+  }
+
   return `This month's ${limit}-customer allowance on the ${plan?.name || "Starter"} plan is used up. Upgrade the plan to keep answering new customers.`;
 }
 

@@ -330,3 +330,20 @@ alter table project_enquiries add column if not exists country text not null def
 alter table project_enquiries add column if not exists local_amount numeric(14, 2);
 alter table project_enquiries add column if not exists fx_rate numeric(18, 8);
 alter table project_enquiries add column if not exists fx_captured_at timestamptz;
+
+/* A visitor is a person, not a conversation. The widget keeps one stable
+   identifier per browser so a returning visitor resumes the same conversation
+   and is counted once, however many chats they open. */
+alter table conversations add column if not exists visitor_key text not null default '';
+create index if not exists conversations_visitor_idx on conversations (assistant_id, visitor_key, status);
+
+/* Message-level idempotency. client_id comes from the widget and makes a
+   retried send return the original message instead of storing it twice, while
+   reply_to ties the single AI answer to the visitor message that caused it.
+   Both indexes tolerate NULL so every message stored before this change is
+   untouched. */
+alter table messages add column if not exists client_id text;
+alter table messages add column if not exists reply_to uuid references messages(id) on delete set null;
+alter table messages add column if not exists status text not null default 'done';
+create unique index if not exists messages_client_idx on messages (conversation_id, client_id);
+create unique index if not exists messages_reply_idx on messages (conversation_id, reply_to);

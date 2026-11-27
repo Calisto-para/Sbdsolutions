@@ -157,7 +157,7 @@ export default function AdminPayments() {
                     </td>
                     <td>
                       <strong>{payment.reference || "—"}</strong>
-                      <span>{payment.method === "paystack" ? "online" : "bank transfer"}</span>
+                      <span>{payment.provider || ["paystack", "flutterwave"].includes(payment.method) ? "online" : "bank transfer"}</span>
                       {payment.providerReference ? <span>provider: {payment.providerReference}</span> : null}
                     </td>
                     <td>

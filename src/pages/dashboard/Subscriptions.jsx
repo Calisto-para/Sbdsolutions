@@ -484,7 +484,7 @@ export default function Subscriptions() {
                     : ""}
                 </strong>
                 <span>
-                  {payment.planId} plan · {payment.method === "paystack" ? "online" : "bank transfer"}
+                  {payment.planId} plan · {payment.provider || ["paystack", "flutterwave"].includes(payment.method) ? "online" : "bank transfer"}
                   {payment.note ? ` · reference: ${payment.note}` : ""} ·{" "}
                   {payment.note ? "awaiting verification" : "awaiting payment"}
                 </span>

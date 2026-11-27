@@ -89,7 +89,7 @@ router.post("/", limiter, async (req, res, next) => {
           serviceName: service.name,
           startingPrice: price,
         },
-        env.projectEnquiryEmail
+        env.projectEnquiryEmails
       );
       delivered = Boolean(result.delivered);
       notificationError = delivered

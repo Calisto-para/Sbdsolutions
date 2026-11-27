@@ -165,11 +165,17 @@ export async function complete({ system, messages }) {
         continue;
       }
 
-      /* A rate limit or an exhausted quota will not clear in a second, so
-         retrying only makes the visitor wait. Everything else that looks
-         transient (5xx, network, timeout) gets one more try. */
+      /* A rate limit with a short Retry-After is worth one quick retry; an
+         exhausted daily quota is not, and should not make the visitor wait.
+         Everything else that looks transient (5xx, network, timeout) gets one
+         more try. */
+      const retryAfter = Number(error?.headers?.["retry-after"] || 0);
+      const brieflyThrottled = status === 429 && retryAfter > 0 && retryAfter <= 3;
       const retryable =
-        status === 0 || status >= 500 || /empty response|timeout|ECONNRESET|socket hang up/i.test(message);
+        status === 0 ||
+        status >= 500 ||
+        brieflyThrottled ||
+        /empty response|timeout|ECONNRESET|socket hang up/i.test(message);
       if (retryable && attempts < 2) {
         await sleep(500);
         continue;

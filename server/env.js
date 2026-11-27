@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 
 const bool = (value) => String(value).toLowerCase() === "true";
 
@@ -14,6 +15,37 @@ const publicAppUrl =
   [configuredAppUrl, renderExternalUrl].find((url) => url && !LOCAL_ORIGIN.test(url)) || "";
 const appUrl = publicAppUrl || configuredAppUrl || "http://localhost:3001";
 
+/* Comma-separated addresses that are promoted to the operator role. */
+const adminEmails = [...(process.env.ADMIN_EMAILS || "").split(","), process.env.ADMIN_EMAIL || ""]
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+const DEV_SESSION_SECRET = "dev-only-insecure-session-secret";
+const configuredSessionSecret = process.env.SESSION_SECRET || "";
+/* A known default secret would let anyone forge a session, including an
+   operator one. In production, fall back to a random per-boot secret instead
+   (everyone signs in again after a restart) and say so loudly. */
+const sessionSecret =
+  configuredSessionSecret || (process.env.NODE_ENV === "production" ? crypto.randomBytes(32).toString("hex") : DEV_SESSION_SECRET);
+
+/* Who receives a public project enquiry: the dedicated inbox, the reply-to
+   address and every operator address, so it cannot land only in an unread
+   fallback mailbox. */
+const projectEnquiryEmails = [
+  ...(process.env.PROJECT_ENQUIRY_EMAIL || "").split(","),
+  ...(process.env.MAIL_REPLY_TO || "").split(","),
+  ...adminEmails,
+]
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean)
+  .filter((value, index, list) => list.indexOf(value) === index);
+
+if (!configuredSessionSecret && process.env.NODE_ENV === "production") {
+  console.error(
+    "[security] SESSION_SECRET is not set. Using a random secret for this process: users are signed out on every restart. Set SESSION_SECRET to a long random value in the service environment."
+  );
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   isProd: process.env.NODE_ENV === "production",
@@ -22,15 +54,9 @@ export const env = {
   appUrlIsLocal: LOCAL_ORIGIN.test(appUrl),
   databaseUrl: process.env.DATABASE_URL || "",
   pgliteDir: process.env.PGLITE_DIR || ".data/pglite",
-  sessionSecret: process.env.SESSION_SECRET || "dev-only-insecure-session-secret",
+  sessionSecret,
   cookieSecure: bool(process.env.COOKIE_SECURE),
-  /* Comma-separated addresses that are promoted to the operator role on boot and sign-in. */
-  adminEmails: [
-    ...(process.env.ADMIN_EMAILS || "").split(","),
-    process.env.ADMIN_EMAIL || "",
-  ]
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean),
+  adminEmails,
   /* A single operator account created/updated from the environment at boot. */
   adminEmail: (process.env.ADMIN_EMAIL || "").trim().toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || "",
@@ -84,9 +110,14 @@ export const env = {
     baseCurrency: process.env.FX_BASE_CURRENCY || "USD",
     cacheMinutes: Number(process.env.FX_CACHE_MINUTES || 360),
   },
-  /* Where project enquiries are emailed. Falls back to the reply-to address. */
+  /* Where project enquiries are emailed: an explicit inbox, plus the reply-to
+     address and every operator, so the owner always sees them. */
   projectEnquiryEmail:
+    projectEnquiryEmails[0] ||
     (process.env.PROJECT_ENQUIRY_EMAIL || process.env.MAIL_REPLY_TO || "sbdiam.solutions@gmail.com").trim(),
+  projectEnquiryEmails: projectEnquiryEmails.length
+    ? projectEnquiryEmails
+    : [(process.env.PROJECT_ENQUIRY_EMAIL || "sbdiam.solutions@gmail.com").trim()],
   mail: {
     /* brevo | resend | smtp. Empty means: first configured provider wins.
        "bravo" is a common spelling of Brevo and is treated as the same

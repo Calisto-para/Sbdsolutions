@@ -4,6 +4,8 @@ import { query, one } from "../db.js";
 import { requireAdmin, publicUser } from "../auth.js";
 import { mailDiagnostics } from "../mail-check.js";
 import { sendTestEmail } from "../mail.js";
+import { complete, aiStatus } from "../ai.js";
+import { env } from "../env.js";
 import { activatePayment, paymentView } from "../payments.js";
 import { findService, startingPrice } from "../../shared/project-services.js";
 
@@ -13,6 +15,32 @@ const router = express.Router();
 router.use(requireAdmin);
 
 const searchTerm = (value) => `%${String(value || "").trim().replace(/[%_]/g, "")}%`;
+
+/* Why the assistant is not answering. Operator-only: it reveals the model name
+   and the provider's error status, never a key. */
+router.post("/ai-test", async (req, res, next) => {
+  try {
+    const result = await complete({
+      system: "Reply with the single word OK.",
+      messages: [{ role: "user", content: "ping" }],
+    });
+    res.json({
+      ok: true,
+      model: env.openai.model,
+      reply: String(result.text || "").slice(0, 40),
+      lastFailure: aiStatus.lastFailure,
+    });
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      model: env.openai.model,
+      code: error?.code || "",
+      status: Number(error?.status || 0) || null,
+      message: String(error?.message || "The model did not answer.").slice(0, 300),
+      lastFailure: aiStatus.lastFailure,
+    });
+  }
+});
 
 router.get("/", async (req, res, next) => {
   try {

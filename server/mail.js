@@ -212,7 +212,8 @@ export function sendProjectEnquiryEmail(enquiry, to) {
       </p>
     </div>`;
 
-  return send({ to, subject, text, html, link: "" });
+  /* Reply goes straight back to the customer, not to our own inbox. */
+  return send({ to, subject, text, html, link: "", replyTo: enquiry.email || "" });
 }
 
 const escapeHtml = (value) =>

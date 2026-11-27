@@ -664,22 +664,34 @@
           render();
           return;
         }
-        /* The message may or may not have reached the server. Keeping its text
-           and client id makes "try again" safe either way. */
-        state.pending = { text: text, clientId: messageId };
         if (error.data && error.data.conversationId) {
           state.conversationId = error.data.conversationId;
           writeStore(conversationStore, state.conversationId);
         }
-        setStatus(error.message);
-        var note = "";
-        if (error.code === "AI_UNAVAILABLE") {
-          details.className = "sbdw-details is-open";
-          note =
-            "Our assistant cannot reply at this moment. Your message is saved — leave your details and the team will get back to you.";
+
+        /* The server stores the message before it calls the assistant, so an
+           assistant failure is not a delivery failure. Never tell the visitor
+           "not sent" for a message that is already saved. */
+        var saved = Boolean(error.data && (error.data.userMessageId || error.data.conversationId));
+        if (saved) {
+          state.pending = null;
+          setStatus("");
+          var savedNote =
+            error.code === "AI_UNAVAILABLE"
+              ? "Our assistant could not answer this one. Your message is saved and the team has been notified — leave your details and we will reply."
+              : "Your message is saved. " + error.message;
+          if (error.code === "AI_UNAVAILABLE") details.className = "sbdw-details is-open";
+          return loadConversation().then(function () {
+            render(savedNote);
+          });
         }
+
+        /* Nothing reached the server: keep the text and its id so "try again"
+           cannot create a duplicate if it did arrive after all. */
+        state.pending = { text: text, clientId: messageId };
+        setStatus(error.message);
         return loadConversation().then(function () {
-          render(note);
+          render();
         });
       })
       .then(function () {

@@ -200,6 +200,18 @@ app.use((error, req, res, next) => {
     return res.status(503).json({ error: error.message, code: "AI_NOT_CONFIGURED" });
   }
 
+  /* No verified model prices: refuse to answer rather than bill an invented
+     rate. Operator-facing, and clearly distinct from a model failure. */
+  if (error?.code === "AI_PRICING_NOT_CONFIGURED") {
+    return res.status(503).json({ error: error.message, code: "AI_PRICING_NOT_CONFIGURED" });
+  }
+
+  /* The account has used its monthly SBD AI credits or internal API budget.
+     The customer keeps dashboard access and is told to renew or upgrade. */
+  if (error?.code === "CREDITS_EXHAUSTED" || error?.code === "SPENDING_LIMIT") {
+    return res.status(error.status || 402).json({ error: error.message, code: error.code });
+  }
+
   /* The model itself failed (quota, rate limit, an unsupported parameter). The
      visitor gets a clear retryable message instead of a generic 500. */
   if (error?.code === "AI_UNAVAILABLE") {

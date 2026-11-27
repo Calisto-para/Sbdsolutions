@@ -347,3 +347,26 @@ alter table messages add column if not exists reply_to uuid references messages(
 alter table messages add column if not exists status text not null default 'done';
 create unique index if not exists messages_client_idx on messages (conversation_id, client_id);
 create unique index if not exists messages_reply_idx on messages (conversation_id, reply_to);
+
+/* One row per completed, billable AI request: the usage ledger behind SBD AI
+   credit deductions and the operator's spend report. The unique idempotency
+   key is what stops a retried request from being charged twice. Costs are
+   stored at full precision (no rounding at write time), and cached, cache-write
+   and output tokens are recorded separately so the maths can be audited. */
+create table if not exists ai_usage_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  idempotency_key text not null,
+  model text not null default '',
+  source text not null default '',
+  prompt_tokens integer not null default 0,
+  cached_tokens integer not null default 0,
+  cache_write_tokens integer not null default 0,
+  completion_tokens integer not null default 0,
+  reasoning_tokens integer not null default 0,
+  cost_usd numeric(18, 10) not null default 0,
+  credits numeric(18, 6) not null default 0,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists ai_usage_events_key_idx on ai_usage_events (user_id, idempotency_key);
+create index if not exists ai_usage_events_month_idx on ai_usage_events (created_at desc, user_id);

@@ -1,13 +1,12 @@
 import OpenAI from "openai";
 import { env, aiConfigured, openaiPricesConfigured, openaiPrices } from "./env.js";
-import { query } from "./db.js";
+import crypto from "node:crypto";
+import { one } from "./db.js";
 import {
-  recordCreditUsage,
-  recordSpending,
-  checkCreditLimit,
-  checkSpendingLimit,
+  chargeAiUsage,
   costInDollars,
   creditsFor,
+  normalizedUsage,
 } from "./plans.js";
 
 export class AiNotConfiguredError extends Error {
@@ -15,6 +14,19 @@ export class AiNotConfiguredError extends Error {
     super("The AI assistant is not connected yet. Add OPENAI_API_KEY to enable chat.");
     this.status = 503;
     this.code = "AI_NOT_CONFIGURED";
+  }
+}
+
+/* Without verified prices there is no honest way to bill a request. Refusing
+   before OpenAI is called keeps the business from serving free AI and keeps
+   the customer from being charged an invented amount. */
+export class AiPricingError extends Error {
+  constructor() {
+    super(
+      "AI billing is not configured on the server, so chat is paused. An operator must set the OpenAI model prices."
+    );
+    this.status = 503;
+    this.code = "AI_PRICING_NOT_CONFIGURED";
   }
 }
 
@@ -118,6 +130,7 @@ export function buildSystemPrompt({ assistant, business, knowledge, businessCont
    max_tokens, and a transient 429/5xx is worth one automatic retry: those two
    cases used to surface as "Your message was not delivered" on the widget. */
 export async function complete({ system, messages }) {
+  if (!openaiPricesConfigured) throw new AiPricingError();
   const openai = getClient();
   const base = {
     model: env.openai.model,
@@ -188,45 +201,70 @@ export async function complete({ system, messages }) {
 }
 
 /* Record the real OpenAI cost of one completed request against a customer
-   account: convert the usage into dollars, convert dollars into SBD AI
-   credits, enforce both the credit allowance and the internal dollar cap,
-   and suspend the account if either runs out. The dollar cost is computed
-   from the actual usage, not from any fixed per-message number. */
-export async function recordAiCost(userId, usage) {
-  if (!usage) return;
+   account. The cost comes from the token usage OpenAI returned, at the
+   verified prices of the model that actually answered; it is never derived
+   from a message count or an average. Dollars and SBD AI credits are added
+   atomically, and the same operation (same idempotency key) is only ever
+   billed once.
+
+   Returns what happened so callers and tests can assert on it:
+   { charged, reason, dollars, credits }. */
+export async function recordAiCost(userId, usage, options = {}) {
+  /* A failed or empty request has no usage, so it has nothing to charge. */
+  if (!usage) return { charged: false, reason: "no-usage" };
+  if (!openaiPricesConfigured) {
+    console.error(
+      "[ai] usage received but no verified model prices are configured — this request was not billed."
+    );
+    return { charged: false, reason: "prices-not-configured" };
+  }
+
   const dollars = costInDollars(usage, openaiPrices);
-  if (!Number.isFinite(dollars) || dollars <= 0) return;
-  await recordSpending(userId, dollars);
-  const creditCost = creditsFor(dollars);
-  if (!Number.isFinite(creditCost) || creditCost <= 0) return;
-
-  const creditError = await checkCreditLimit(userId);
-  if (creditError) {
-    await query(
-      `update users
-         set suspended_at = now(),
-             suspended_reason = $2,
-             updated_at = now()
-       where id = $1`,
-      [
-        userId,
-        `SBD AI credits (${(openaiPrices.inputPricePerM ?? 0) > 0 ? "plan allowance" : "plan allowance"} exhausted — renew or upgrade to continue.`,
-      ]
-    );
-    return;
+  const credits = creditsFor(dollars);
+  if (!Number.isFinite(dollars) || dollars <= 0 || !Number.isFinite(credits) || credits <= 0) {
+    return { charged: false, reason: "no-cost" };
   }
 
-  await recordCreditUsage(userId, creditCost);
+  const tokens = normalizedUsage(usage);
+  const idempotencyKey = String(options.key || "").trim() || `req-${crypto.randomUUID()}`;
 
-  const spendError = await checkSpendingLimit(userId);
-  if (spendError) {
-    await query(
-      `update users
-         set suspended_at = now(),
-             suspended_reason = $2,
-             updated_at = now()
-       where id = $1`,
-      [userId, spendError]
+  /* The ledger row is the idempotency lock: a retried operation loses the
+     insert on the unique key and therefore never charges twice. */
+  const ledger = await one(
+    `insert into ai_usage_events
+       (user_id, idempotency_key, model, source, prompt_tokens, cached_tokens,
+        cache_write_tokens, completion_tokens, reasoning_tokens, cost_usd, credits)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     on conflict (user_id, idempotency_key) do nothing
+     returning id`,
+    [
+      userId,
+      idempotencyKey,
+      env.openai.model,
+      String(options.source || "").slice(0, 40),
+      tokens.promptTokens,
+      tokens.cachedTokens,
+      tokens.cacheWriteTokens,
+      tokens.completionTokens,
+      tokens.reasoningTokens,
+      dollars,
+      credits,
+    ]
+  );
+  if (!ledger) return { charged: false, reason: "duplicate" };
+
+  const totals = await chargeAiUsage(userId, dollars);
+  const reachedCredits =
+    totals?.credit_limit != null && Number(totals.credits_used) >= Number(totals.credit_limit);
+  const reachedSpending =
+    totals?.underlying_cost != null && Number(totals.spending_used) >= Number(totals.underlying_cost);
+  if (reachedCredits || reachedSpending) {
+    /* No suspension here: the account keeps dashboard access so it can renew
+       or upgrade, while the pre-flight gate stops further AI calls. */
+    console.log(
+      `[ai] account ${userId} reached its ${reachedCredits ? "SBD credit" : "internal API spending"} limit.`
     );
   }
+
+  return { charged: true, dollars, credits, totals };
 }

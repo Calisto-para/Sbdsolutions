@@ -373,7 +373,13 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     );
 
     if (assistantMessage) {
-      await recordAiCost(assistant.user_id, result.usage);
+      /* One stored answer is one billable operation. A duplicate request finds
+         either the stored reply above or this ledger key, so it never charges
+         the owner twice for the same answer. */
+      await recordAiCost(assistant.user_id, result.usage, {
+        key: `widget:${assistantMessage.id}`,
+        source: "widget",
+      });
     } else {
       assistantMessage = await one(
         "select id, content from messages where conversation_id = $1 and reply_to = $2",

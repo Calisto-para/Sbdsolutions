@@ -227,7 +227,14 @@ export async function activatePayment(payment, { verifiedBy = null, method = "" 
     `update subscriptions
         set plan_id = $2, status = 'active', cancel_at_period_end = false,
             current_period_end = now() + interval '30 days',
-            tokens_used = 0, updated_at = now()
+            period_start_at = now(),
+            tokens_used = 0,
+            /* A verified renewal is the only thing that resets the month's
+               SBD AI credits and internal API spend — never a refresh or a
+               new sign-in. */
+            credits_used = 0,
+            spending_used = 0,
+            updated_at = now()
       where user_id = $1`,
     [payment.user_id, plan.id]
   );

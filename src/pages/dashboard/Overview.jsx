@@ -28,7 +28,11 @@ export default function Overview({ onNavigate }) {
 
   const agentPercent = percent(limits.used ?? data.stats.assistants, limits.limit ?? 1);
   const customerPercent = percent(limits.customers ?? 0, limits.customerLimit ?? 50);
+  const creditPercent = limits.creditLimit ? Math.min(100, Math.round((limits.creditsUsed / limits.creditLimit) * 100)) : 0;
   const atAgentLimit = limits.canCreate === false;
+  const creditsExhausted = Boolean(limits.creditsExhausted);
+  const creditsLow = !creditsExhausted && creditPercent >= 80;
+  const formatCredits = (value) => Number(value || 0).toLocaleString("en-GB", { maximumFractionDigits: 1 });
 
   return (
     <div className="dash-stack">
@@ -70,7 +74,38 @@ export default function Overview({ onNavigate }) {
               <span style={{ width: `${customerPercent}%` }} />
             </div>
           </div>
+
+          {limits.creditLimit ? (
+            <div className="usage-item">
+              <div className="usage-head">
+                <span>SBD AI credits this month</span>
+                <strong>
+                  {formatCredits(limits.creditsUsed)} / {formatCredits(limits.creditLimit)}
+                </strong>
+              </div>
+              <div className={`usage-bar${creditsExhausted || creditsLow ? " usage-bar--low" : ""}`}>
+                <span style={{ width: `${creditPercent}%` }} />
+              </div>
+            </div>
+          ) : null}
         </div>
+
+        {limits.creditLimit && (creditsExhausted || creditsLow) ? (
+          <div className="usage-lock">
+            <p>
+              {creditsExhausted
+                ? `You have used all ${formatCredits(limits.creditLimit)} SBD AI credits on the ${limits.planName || "current"} plan this month, so new AI replies are paused. Renew or upgrade to keep answering customers.`
+                : `Only ${formatCredits(limits.creditRemaining)} of your ${formatCredits(limits.creditLimit)} SBD AI credits are left this month.`}
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={() => onNavigate({ tab: "subscriptions" })}
+            >
+              {creditsExhausted ? "Renew or upgrade" : "View plans"}
+            </button>
+          </div>
+        ) : null}
 
         {atAgentLimit ? (
           <div className="usage-lock">

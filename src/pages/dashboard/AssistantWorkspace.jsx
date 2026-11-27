@@ -360,9 +360,13 @@ function TestChat({ assistant, conversations, reloadConversations, setError, onE
     setBusy(true);
 
     try {
+      /* One id per send attempt: if this request has to be retried, the server
+         bills it once instead of charging for the same answer twice. */
+      const clientMessageId =
+        window.crypto?.randomUUID?.() || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const data = await api(`/assistants/${assistant.id}/chat`, {
         method: "POST",
-        body: { message: text, conversationId: conversationId || undefined },
+        body: { message: text, conversationId: conversationId || undefined, clientMessageId },
       });
       setConversationId(data.conversationId);
       setMessages((current) => [...current, { role: "assistant", content: data.reply }]);

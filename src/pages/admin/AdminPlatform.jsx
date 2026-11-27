@@ -3,6 +3,8 @@ import { api } from "../../lib/api";
 import { shortDate } from "./AdminOverview";
 
 const number = (value) => new Intl.NumberFormat("en-GB").format(value || 0);
+const compact = (value) => new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(Math.round(value || 0));
+const usd = (value) => `$${Number(value || 0).toFixed(4)}`;
 
 /* Businesses, assistants and activity across the whole platform. */
 export default function AdminPlatform() {
@@ -16,9 +18,10 @@ export default function AdminPlatform() {
       api(`/admin/platform`),
       api(`/admin/businesses?q=${encodeURIComponent(search)}`),
       api(`/admin/assistants?q=${encodeURIComponent(search)}`),
+      api(`/admin/usage`),
     ])
-      .then(([platform, businesses, assistants]) => {
-        setData({ ...platform, businesses, assistants });
+      .then(([platform, businesses, assistants, usage]) => {
+        setData({ ...platform, businesses, assistants, usage });
       })
       .catch((err) => setError(err.message));
   };
@@ -39,6 +42,8 @@ export default function AdminPlatform() {
     { label: "Suspended accounts", value: number(data.activity.suspendedUsers) },
   ];
 
+  const usage = data.usage || null;
+
   return (
     <div className="dash-stack">
       {error ? <div className="form-alert form-alert--error">{error}</div> : null}
@@ -51,6 +56,129 @@ export default function AdminPlatform() {
           </div>
         ))}
       </div>
+
+      {usage ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>AI usage and spend</h2>
+            <p>
+              Internal OpenAI costs for {usage.monthLabel}. Customers only see SBD AI credits, never these
+              dollar figures.
+            </p>
+          </div>
+
+          <div className="stat-grid admin-stats">
+            <div className="stat-card">
+              <span className="stat-value">{usd(usage.totals.costUsd)}</span>
+              <span className="stat-label">OpenAI spend this month</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{compact(usage.totals.credits)}</span>
+              <span className="stat-label">SBD credits consumed this month</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{number(usage.totals.requests)}</span>
+              <span className="stat-label">Billable AI requests</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{compact(usage.totals.promptTokens + usage.totals.completionTokens)}</span>
+              <span className="stat-label">Input and output tokens</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{compact(usage.totals.cachedTokens)}</span>
+              <span className="stat-label">Cached input tokens</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{usd(usage.totals.allTimeCostUsd)}</span>
+              <span className="stat-label">All-time OpenAI spend</span>
+            </div>
+          </div>
+
+          <div className="panel-head" style={{ marginTop: 18 }}>
+            <h3>Cost per customer</h3>
+            <p>Every customer's monthly credits, internal spend and token use.</p>
+          </div>
+          {usage.customers.length ? (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Plan</th>
+                    <th>Credits</th>
+                    <th>API spend</th>
+                    <th>Tokens in / out</th>
+                    <th>Cached</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.customers.map((customer) => (
+                    <tr key={customer.userId}>
+                      <td>
+                        <strong>{customer.name}</strong>
+                        <span>{customer.email}</span>
+                      </td>
+                      <td>{customer.planName}</td>
+                      <td>
+                        {number(customer.creditsUsed)}
+                        {customer.creditLimit != null ? ` / ${number(customer.creditLimit)}` : ""}
+                      </td>
+                      <td>
+                        {usd(customer.spendingUsed)}
+                        {customer.spendingCap != null ? ` / $${customer.spendingCap}` : ""}
+                      </td>
+                      <td>
+                        {compact(customer.promptTokens)} / {compact(customer.completionTokens)}
+                      </td>
+                      <td>{compact(customer.cachedTokens)}</td>
+                      <td>
+                        <span
+                          className={`admin-pill${customer.atLimit || customer.approaching ? " admin-pill--muted" : ""}`}
+                        >
+                          {customer.atLimit ? "At limit" : customer.approaching ? "Near limit" : "Within limit"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty">No customer accounts yet.</div>
+          )}
+
+          <div className="panel-head" style={{ marginTop: 18 }}>
+            <h3>Usage per plan</h3>
+          </div>
+          {usage.plans.length ? (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Customers</th>
+                    <th>Credits used</th>
+                    <th>Internal API spend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.plans.map((plan) => (
+                    <tr key={plan.planId}>
+                      <td><strong>{plan.planName}</strong></td>
+                      <td>{number(plan.customers)}</td>
+                      <td>{number(plan.creditsUsed)}</td>
+                      <td>{usd(plan.spendingUsed)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty">No plan usage yet.</div>
+          )}
+        </section>
+      ) : null}
 
       <section className="panel">
         <div className="panel-head panel-head--row">

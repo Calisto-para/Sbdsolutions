@@ -8,7 +8,6 @@ import { loadKnowledgeBase } from "../knowledge.js";
 import {
   agentUsage,
   assistantAllowanceError,
-  checkTokenLimit,
   addTokenUsage,
   requireActiveAiAccount,
 } from "../plans.js";
@@ -269,9 +268,13 @@ router.post("/:id/knowledge/:itemId/ask", requireAuth, async (req, res, next) =>
     const assistant = await ownedAssistant(req.user.id, req.params.id);
     if (!assistant) return res.status(404).json({ error: "Assistant not found." });
 
-    /* Check token allowance before processing the question. */
-    const tokenError = await checkTokenLimit(req.user.id);
-    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
+    /* Stop before OpenAI if this account has used its SBD AI credits or its
+       internal API spending cap. */
+    try {
+      await requireActiveAiAccount(req.user.id);
+    } catch (accountError) {
+      return res.status(accountError.status || 503).json({ error: accountError.message, code: accountError.code });
+    }
 
     const item = await one(
       "select * from knowledge_items where id = $1 and assistant_id = $2 and user_id = $3",
@@ -342,10 +345,6 @@ router.post("/:id/knowledge/pdf", requireAuth, upload.single("file"), async (req
     if (req.file.mimetype !== "application/pdf" && !/\.pdf$/i.test(req.file.originalname || "")) {
       return res.status(400).json({ error: "Only PDF documents can be uploaded." });
     }
-
-    /* Check token allowance before processing the PDF. */
-    const tokenError = await checkTokenLimit(req.user.id);
-    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
 
     let text = "";
     try {
@@ -500,10 +499,6 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
     const assistant = await ownedAssistant(req.user.id, req.params.id);
     if (!assistant) return res.status(404).json({ error: "Assistant not found." });
 
-    /* Check token allowance before processing the chat. */
-    const tokenError = await checkTokenLimit(req.user.id);
-    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
-
     try {
       await requireActiveAiAccount(req.user.id);
     } catch (accountError) {
@@ -514,6 +509,8 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
       .object({
         message: z.string().trim().min(1, "Type a message first.").max(2000),
         conversationId: z.string().uuid().optional(),
+        /* Stable id for one send attempt, so a retried request is billed once. */
+        clientMessageId: z.string().trim().regex(/^[a-zA-Z0-9-]{4,80}$/).optional(),
       })
       .parse(req.body);
 
@@ -559,7 +556,10 @@ router.post("/:id/chat", requireAuth, async (req, res, next) => {
        the internal dollar cap. */
     const tokenCost = 5;
     await addTokenUsage(req.user.id, tokenCost);
-    await recordAiCost(req.user.id, result.usage);
+    await recordAiCost(req.user.id, result.usage, {
+      key: body.clientMessageId ? `dashboard:${req.user.id}:${body.clientMessageId}` : "",
+      source: "dashboard",
+    });
 
     if (!conversation) {
       conversation = await one(

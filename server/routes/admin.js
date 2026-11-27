@@ -737,4 +737,120 @@ router.patch("/projects/:id", async (req, res, next) => {
   }
 });
 
+/* AI usage and spend, operator-only. Customers must never see these internal
+   dollar figures: they only ever see their SBD AI credit allowance. */
+router.get("/usage", async (req, res, next) => {
+  try {
+    const month = await one(
+      `select
+         coalesce(sum(case when created_at >= date_trunc('month', now()) then cost_usd else 0 end), 0) as month_cost,
+         coalesce(sum(case when created_at >= date_trunc('month', now()) then credits else 0 end), 0) as month_credits,
+         count(case when created_at >= date_trunc('month', now()) then 1 end)::int as month_requests,
+         coalesce(sum(case when created_at >= date_trunc('month', now()) then prompt_tokens else 0 end), 0) as month_prompt_tokens,
+         coalesce(sum(case when created_at >= date_trunc('month', now()) then cached_tokens else 0 end), 0) as month_cached_tokens,
+         coalesce(sum(case when created_at >= date_trunc('month', now()) then completion_tokens else 0 end), 0) as month_completion_tokens,
+         coalesce(sum(cost_usd), 0) as all_cost,
+         coalesce(sum(credits), 0) as all_credits,
+         count(*)::int as all_requests
+       from ai_usage_events`
+    );
+
+    const customers = await query(
+      `select u.id as user_id, u.full_name, u.email, u.suspended_at,
+              s.plan_id, coalesce(p.name, s.plan_id) as plan_name,
+              p.credit_limit, p.underlying_cost,
+              coalesce(s.credits_used, 0) as credits_used,
+              coalesce(s.spending_used, 0) as spending_used,
+              coalesce(e.requests, 0) as requests,
+              coalesce(e.prompt_tokens, 0) as prompt_tokens,
+              coalesce(e.cached_tokens, 0) as cached_tokens,
+              coalesce(e.completion_tokens, 0) as completion_tokens,
+              coalesce(e.cost_usd, 0) as cost_usd
+         from users u
+         left join subscriptions s on s.user_id = u.id
+         left join plans p on p.id = s.plan_id
+         left join (
+           select user_id,
+                  count(*) as requests,
+                  sum(prompt_tokens) as prompt_tokens,
+                  sum(cached_tokens) as cached_tokens,
+                  sum(completion_tokens) as completion_tokens,
+                  sum(cost_usd) as cost_usd
+             from ai_usage_events
+            where created_at >= date_trunc('month', now())
+            group by user_id
+         ) e on e.user_id = u.id
+        where u.role = 'client'
+        order by coalesce(e.cost_usd, 0) desc, u.created_at desc
+        limit 200`
+    );
+
+    const plans = await query(
+      `select s.plan_id, coalesce(p.name, s.plan_id) as plan_name,
+              count(*)::int as customers,
+              coalesce(sum(s.credits_used), 0) as credits_used,
+              coalesce(sum(s.spending_used), 0) as spending_used
+         from subscriptions s
+         left join plans p on p.id = s.plan_id
+        group by s.plan_id, p.name
+        order by s.plan_id`
+    );
+
+    res.json({
+      monthLabel: new Date().toISOString().slice(0, 7),
+      totals: {
+        costUsd: Number(month?.month_cost || 0),
+        credits: Number(month?.month_credits || 0),
+        requests: Number(month?.month_requests || 0),
+        promptTokens: Number(month?.month_prompt_tokens || 0),
+        cachedTokens: Number(month?.month_cached_tokens || 0),
+        completionTokens: Number(month?.month_completion_tokens || 0),
+        allTimeCostUsd: Number(month?.all_cost || 0),
+        allTimeCredits: Number(month?.all_credits || 0),
+        allTimeRequests: Number(month?.all_requests || 0),
+      },
+      customers: customers.map((row) => {
+        const creditsUsed = Number(row.credits_used || 0);
+        const creditLimit = row.credit_limit == null ? null : Number(row.credit_limit);
+        const spendingUsed = Number(row.spending_used || 0);
+        const spendingCap = row.underlying_cost == null ? null : Number(row.underlying_cost);
+        const creditPercent = creditLimit ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : null;
+        const spendPercent = spendingCap ? Math.min(100, Math.round((spendingUsed / spendingCap) * 100)) : null;
+        const atLimit = (creditLimit != null && creditsUsed >= creditLimit) ||
+          (spendingCap != null && spendingUsed >= spendingCap);
+        const approaching = !atLimit && ((creditPercent ?? 0) >= 80 || (spendPercent ?? 0) >= 80);
+        return {
+          userId: row.user_id,
+          name: row.full_name,
+          email: row.email,
+          planId: row.plan_id,
+          planName: row.plan_name || "No plan",
+          creditsUsed,
+          creditLimit,
+          creditPercent,
+          spendingUsed,
+          spendingCap,
+          spendPercent,
+          requests: Number(row.requests || 0),
+          promptTokens: Number(row.prompt_tokens || 0),
+          cachedTokens: Number(row.cached_tokens || 0),
+          completionTokens: Number(row.completion_tokens || 0),
+          costUsd: Number(row.cost_usd || 0),
+          atLimit,
+          approaching,
+        };
+      }),
+      plans: plans.map((row) => ({
+        planId: row.plan_id,
+        planName: row.plan_name || row.plan_id,
+        customers: Number(row.customers || 0),
+        creditsUsed: Number(row.credits_used || 0),
+        spendingUsed: Number(row.spending_used || 0),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

@@ -49,11 +49,23 @@ router.get("/", requireAuth, async (req, res, next) => {
       currentPlan(req.user.id),
     ]);
 
+    /* The customer-facing credit balance. Only the SBD AI credit figure is
+       exposed — never the internal dollar spending cap. */
+    const creditLimit = planInfo.plan?.custom
+      ? null
+      : Number(planInfo.plan?.credit_limit || 0) || null;
+    const creditsUsed = Number(planInfo.subscription?.credits_used || 0);
+
     res.json({
       limits: {
         ...limits,
         customers: monthly.customers,
         customerLimit: planInfo.plan?.message_limit ?? 50,
+        creditsUsed,
+        creditLimit,
+        creditRemaining: creditLimit == null ? null : Math.max(0, creditLimit - creditsUsed),
+        creditPercent: creditLimit ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : null,
+        creditsExhausted: creditLimit != null && creditsUsed >= creditLimit,
       },
       stats: {
         assistants: stats.assistants,

@@ -104,21 +104,101 @@ export async function checkSpendingLimit(userId) {
   return "";
 }
 
-/* Convert a real OpenAI usage object into actual dollars for the configured
-   model, using the prices from environment. Missing usage fields are treated
-   as zero. Cached prompt tokens are billed at the cheaper cached-input rate
-   for the non-cached portion only. */
+/* Read the token counts out of an OpenAI `usage` object. OpenAI reports
+   cached prompt tokens under `prompt_tokens_details.cached_tokens` (older
+   shapes put them at the top level), cache writes under
+   `prompt_tokens_details.cache_write_tokens`, and reasoning tokens inside
+   `completion_tokens_details.reasoning_tokens` — reasoning tokens are already
+   part of `completion_tokens`, so they are reported but never added twice. */
+export function normalizedUsage(usage = {}) {
+  const promptDetails = usage.prompt_tokens_details || {};
+  const completionDetails = usage.completion_tokens_details || {};
+  const count = (value) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+  const promptTokens = count(usage.prompt_tokens ?? usage.input_tokens);
+  const completionTokens = count(usage.completion_tokens ?? usage.output_tokens);
+  const cachedTokens = Math.min(promptTokens, count(promptDetails.cached_tokens ?? usage.cached_tokens));
+  const cacheWriteTokens = Math.min(
+    Math.max(0, promptTokens - cachedTokens),
+    count(promptDetails.cache_write_tokens ?? usage.cache_write_tokens)
+  );
+  const reasoningTokens = Math.min(
+    completionTokens,
+    count(completionDetails.reasoning_tokens ?? usage.reasoning_tokens)
+  );
+  return { promptTokens, completionTokens, cachedTokens, cacheWriteTokens, reasoningTokens };
+}
+
+/* Convert a real OpenAI usage object into the actual dollars it cost, using
+   the verified prices for the model that answered the request. Every token
+   category is priced separately: fresh input, cached input, cache writes and
+   output. A long-context tier, when the model publishes one, applies to the
+   whole request once its prompt passes the threshold. */
 export function costInDollars(usage, prices) {
   if (!usage || !prices) return 0;
-  const promptTokens = Number(usage.prompt_tokens || 0);
-  const completionTokens = Number(usage.completion_tokens || 0);
-  const cachedTokens = Number(usage.cached_tokens || 0);
-  const freshPromptTokens = Math.max(0, promptTokens - cachedTokens);
-  const inputCost =
-    (freshPromptTokens / 1_000_000) * prices.inputPricePerM +
-    (cachedTokens / 1_000_000) * prices.cachedInputPricePerM;
-  const outputCost = (completionTokens / 1_000_000) * prices.outputPricePerM;
-  return inputCost + outputCost;
+  const { promptTokens, completionTokens, cachedTokens, cacheWriteTokens } = normalizedUsage(usage);
+  if (promptTokens + completionTokens <= 0) return 0;
+
+  const long = prices.longContext;
+  const tier = long && promptTokens > Number(long.threshold || 272000) ? long : null;
+  const inputRate = Number(tier ? tier.input : prices.inputPricePerM);
+  const cachedRate = Number(tier ? tier.cachedInput : prices.cachedInputPricePerM);
+  const outputRate = Number(tier ? tier.output : prices.outputPricePerM);
+  const writeRate = Number(
+    (tier && tier.cacheWrite != null ? tier.cacheWrite : prices.cacheWritePricePerM) ?? 0
+  );
+  if (![inputRate, cachedRate, outputRate].every(Number.isFinite)) return 0;
+
+  const freshPromptTokens = Math.max(0, promptTokens - cachedTokens - cacheWriteTokens);
+  const inputCost = (freshPromptTokens / 1_000_000) * inputRate;
+  const cachedCost = (cachedTokens / 1_000_000) * cachedRate;
+  const writeCost = (cacheWriteTokens / 1_000_000) * (Number.isFinite(writeRate) ? writeRate : 0);
+  const outputCost = (completionTokens / 1_000_000) * outputRate;
+  return inputCost + cachedCost + writeCost + outputCost;
+}
+
+/* Add one completed request's real cost to the account in a single UPDATE, so
+   concurrent requests cannot lose an increment or push a balance past its
+   limit. `least()` clamps at the plan allowance/cap: a customer can reach
+   exactly their limit, never exceed it, and can never go negative. */
+export async function chargeAiUsage(userId, dollars) {
+  if (!Number.isFinite(dollars) || dollars <= 0) return null;
+  const credits = creditsFor(dollars);
+  return one(
+    `update subscriptions s
+        set credits_used = least(coalesce(p.credit_limit, 1e18), coalesce(s.credits_used, 0) + $2::numeric),
+            spending_used = least(coalesce(p.underlying_cost, 1e18), coalesce(s.spending_used, 0) + $3::numeric),
+            updated_at = now()
+       from plans p
+      where s.user_id = $1 and p.id = s.plan_id
+      returning s.credits_used, s.spending_used,
+                p.credit_limit, p.underlying_cost, p.custom`,
+    [userId, credits, dollars]
+  );
+}
+
+/* Thrown when the account has used its monthly SBD AI credits or reached its
+   internal API spending cap. 402 is deliberate: it asks the customer to
+   renew or upgrade, and it does not sign them out of the dashboard. */
+export class AiAllowanceError extends Error {
+  constructor(message, code = "CREDITS_EXHAUSTED") {
+    super(message);
+    this.status = 402;
+    this.code = code;
+  }
+}
+
+/* Pre-flight gate for every billable AI call. It runs before OpenAI is asked
+   anything, so an exhausted account stops making chargeable requests instead
+   of being served one more answer it cannot pay for. */
+export async function aiAllowanceError(userId) {
+  const creditError = await checkCreditLimit(userId);
+  if (creditError) return { message: creditError, code: "CREDITS_EXHAUSTED" };
+  const spendError = await checkSpendingLimit(userId);
+  if (spendError) return { message: spendError, code: "SPENDING_LIMIT" };
+  return null;
 }
 
 /* The published credit rate: $0.01 of actual OpenAI API cost = 10 SBD AI
@@ -145,6 +225,9 @@ export async function requireActiveAiAccount(userId) {
        OpenAI. */
     throw new AiNotConfiguredError();
   }
+
+  const blocked = await aiAllowanceError(userId);
+  if (blocked) throw new AiAllowanceError(blocked.message, blocked.code);
 }
 
 export async function resetTokenUsage(userId) {

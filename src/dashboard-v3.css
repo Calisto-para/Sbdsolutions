@@ -712,3 +712,226 @@
   display: block;
   margin-top: 4px;
 }
+
+/* ==========================================================================
+   Mobile layout correction
+   Phones used to squeeze headings next to a wide control (`.panel-head--row`),
+   which pushed tabs and tables off-screen. Below tablet width every such row
+   stacks, grid children may shrink (`min-width: 0`), and wide content (tables,
+   tabs) scrolls inside its own panel instead of widening the page.
+   ========================================================================== */
+
+.dash,
+.dash-main,
+.dash-content,
+.dash-body,
+.dash-stack,
+.dash-columns,
+.panel {
+  min-width: 0;
+}
+
+.dash-stack > *,
+.dash-columns > *,
+.panel > * {
+  min-width: 0;
+}
+
+.usage-bar--low span {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.chat-msg p,
+.chat-msg,
+.kb-answer p,
+.training-text,
+.activity-list strong,
+.stat-label {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 980px) {
+  .dash-body {
+    padding: 16px 14px 48px;
+    width: 100%;
+  }
+
+  /* A heading plus a control becomes one vertical block. */
+  .panel-head--row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .panel-head--row > * {
+    justify-self: stretch;
+    min-width: 0;
+  }
+
+  .panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .field--inline {
+    width: 100%;
+    max-width: none;
+  }
+
+  .field--inline select,
+  .field--inline input {
+    width: 100%;
+  }
+
+  .admin-search {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-search input {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .admin-search .btn {
+    flex: 0 0 auto;
+  }
+
+  .kb-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+  }
+
+  .plan-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plan-head {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  /* Wide data stays usable: scroll the table, not the page. */
+  .admin-table-wrap,
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .admin-table {
+    min-width: 560px;
+  }
+
+  .tabs {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .tabs button {
+    padding: 10px 12px;
+  }
+
+  .checkout-summary .field {
+    max-width: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .dash-body {
+    padding: 14px 12px 44px;
+  }
+
+  .stat-grid,
+  .admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .kb-stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .kb-stats span {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fbfdff;
+  }
+
+  .kb-stats strong {
+    font-size: 1.05rem;
+  }
+
+  .dash-top {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+
+  .dash-user {
+    margin-left: 0;
+  }
+
+  .panel {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .panel-head h2 {
+    font-size: 1rem;
+  }
+
+  .dash-columns {
+    gap: 14px;
+  }
+
+  .chat-form {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
+
+  .chat-form input {
+    flex: 1 1 100%;
+  }
+
+  .chat-form .btn {
+    width: 100%;
+  }
+
+  .conversation-list li {
+    gap: 8px;
+  }
+
+  .plan-card {
+    padding: 14px;
+  }
+
+  .usage-head {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .stat-grid,
+  .admin-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stat-card {
+    padding: 12px 12px 10px;
+  }
+
+  .tabs button {
+    padding: 9px 10px;
+    font-size: 0.8rem;
+  }
+}

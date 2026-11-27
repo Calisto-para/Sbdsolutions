@@ -6,7 +6,6 @@ import { requireAuth } from "../auth.js";
 import { buildSystemPrompt, complete, recordAiCost } from "../ai.js";
 import {
   addTokenUsage,
-  checkTokenLimit,
   requireActiveAiAccount,
 } from "../plans.js";
 import {
@@ -367,8 +366,6 @@ router.post("/test", requireAuth, async (req, res, next) => {
       });
     }
 
-    const tokenError = await checkTokenLimit(req.user.id);
-    if (tokenError) return res.status(403).json({ error: tokenError, code: "TOKEN_LIMIT" });
     try {
       await requireActiveAiAccount(req.user.id);
     } catch (accountError) {
@@ -389,7 +386,7 @@ router.post("/test", requireAuth, async (req, res, next) => {
     const result = await complete({ system, messages: [{ role: "user", content: body.question }] });
 
     await addTokenUsage(req.user.id, 3);
-    await recordAiCost(req.user.id, result.usage);
+    await recordAiCost(req.user.id, result.usage, { source: "knowledge-test" });
 
     res.json({
       answer: result.text,

@@ -49,6 +49,49 @@ if (!configuredSessionSecret && process.env.NODE_ENV === "production") {
   );
 }
 
+/* Official OpenAI Standard API prices, USD per 1,000,000 tokens, checked
+   against https://developers.openai.com/api/docs/pricing on 27 November 2026.
+   They are only a fallback: an explicit OPENAI_*_PRICE_PER_M variable wins, so
+   a price change on OpenAI's side is a one-line edit here or an env override.
+   An unknown model with no env prices resolves to no prices at all, which
+   pauses AI rather than billing an invented rate. */
+const MODEL_PRICES = {
+  "gpt-6-luna": {
+    input: 0.1,
+    cachedInput: 0.01,
+    output: 0.5,
+    cacheWrite: 0.125,
+    longContext: { threshold: 272000, input: 0.2, cachedInput: 0.02, output: 0.75, cacheWrite: 0.25 },
+  },
+  "gpt-6.1-terra": { input: 1.0, cachedInput: 0.05, output: 5.0, cacheWrite: 1.25 },
+  "gpt-6.1-sol": { input: 2.0, cachedInput: 0.1, output: 10.0, cacheWrite: 2.5 },
+  "gpt-6-sol": { input: 2.0, cachedInput: 0.2, output: 10.0, cacheWrite: 2.5 },
+  "gpt-5.6-luna": { input: 0.2, cachedInput: 0.02, output: 1.2, cacheWrite: 0.25 },
+  "gpt-5.6-terra": { input: 2.0, cachedInput: 0.2, output: 12.0, cacheWrite: 2.5 },
+  "gpt-5.6-sol": { input: 4.0, cachedInput: 0.4, output: 20.0, cacheWrite: 5.0 },
+  "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2.0 },
+  "gpt-5-nano": { input: 0.05, cachedInput: 0.005, output: 0.4 },
+  "gpt-5": { input: 1.25, cachedInput: 0.125, output: 10.0 },
+  "gpt-4.1": { input: 2.0, cachedInput: 0.5, output: 8.0 },
+  "gpt-4.1-mini": { input: 0.4, cachedInput: 0.1, output: 1.6 },
+  "gpt-4o": { input: 2.5, cachedInput: 1.25, output: 10.0 },
+  "gpt-4o-mini": { input: 0.15, cachedInput: 0.075, output: 0.6 },
+};
+
+const configuredModel = (process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
+const catalogPrices = MODEL_PRICES[configuredModel] || null;
+/* Empty/invalid env values fall back to the verified catalog price. */
+const priceFrom = (value, fallback) => {
+  const parsed = Number.parseFloat(value || "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const inputPriceIsEnv = Number.isFinite(Number.parseFloat(process.env.OPENAI_INPUT_PRICE_PER_M || ""));
+const pricesUseCatalog =
+  Boolean(catalogPrices) &&
+  (!inputPriceIsEnv ||
+    !Number.isFinite(Number.parseFloat(process.env.OPENAI_OUTPUT_PRICE_PER_M || "")) ||
+    !Number.isFinite(Number.parseFloat(process.env.OPENAI_CACHED_INPUT_PRICE_PER_M || "")));
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   isProd: process.env.NODE_ENV === "production",
@@ -90,20 +133,27 @@ export const env = {
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || "",
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: configuredModel,
     baseUrl: process.env.OPENAI_BASE_URL || "",
   },
   /* Per-token OpenAI prices for the configured OPENAI_MODEL, in USD per
-     1,000,000 tokens. These must match the selected model. If they are
-     missing or invalid the AI routes reject requests instead of assuming
-     $0 cost. Keep in step with the model configured above. */
+     1,000,000 tokens. An env override wins; otherwise the verified catalog
+     price for that model id is used. If neither exists the AI routes reject
+     requests instead of assuming $0 cost. */
   openaiPrices: {
-    inputPricePerM:
-      Number.parseFloat(process.env.OPENAI_INPUT_PRICE_PER_M || ""),
-    outputPricePerM:
-      Number.parseFloat(process.env.OPENAI_OUTPUT_PRICE_PER_M || ""),
-    cachedInputPricePerM:
-      Number.parseFloat(process.env.OPENAI_CACHED_INPUT_PRICE_PER_M || ""),
+    model: configuredModel,
+    inputPricePerM: priceFrom(process.env.OPENAI_INPUT_PRICE_PER_M, catalogPrices?.input),
+    outputPricePerM: priceFrom(process.env.OPENAI_OUTPUT_PRICE_PER_M, catalogPrices?.output),
+    cachedInputPricePerM: priceFrom(
+      process.env.OPENAI_CACHED_INPUT_PRICE_PER_M,
+      catalogPrices?.cachedInput
+    ),
+    cacheWritePricePerM: priceFrom(
+      process.env.OPENAI_CACHE_WRITE_PRICE_PER_M,
+      catalogPrices?.cacheWrite
+    ),
+    longContext: catalogPrices?.longContext || null,
+    source: pricesUseCatalog ? "catalog" : inputPriceIsEnv ? "env" : "none",
   },
   /* Live exchange rates for local-currency checkout. The price list is always
      in USD; the rate is fetched (never hardcoded), cached briefly, and the
@@ -169,8 +219,30 @@ export const openaiPricesConfigured = (() => {
   if (inputPricePerM < 0 || outputPricePerM < 0 || cachedInputPricePerM < 0) {
     return false;
   }
-  return true;
+  /* All-zero rates cannot be a real tariff; treat them as unconfigured. */
+  return inputPricePerM + outputPricePerM > 0;
 })();
+
+if (catalogPrices && inputPriceIsEnv) {
+  const mismatch =
+    Number.parseFloat(process.env.OPENAI_INPUT_PRICE_PER_M || "") !== catalogPrices.input ||
+    Number.parseFloat(process.env.OPENAI_OUTPUT_PRICE_PER_M || "") !== catalogPrices.output;
+  if (mismatch) {
+    console.warn(
+      `[ai] OPENAI_*_PRICE_PER_M do not match the verified prices for ${configuredModel} ` +
+        `(input $${catalogPrices.input}, output $${catalogPrices.output}, cached $${catalogPrices.cachedInput} per 1M). ` +
+        "Credits are calculated from the env values; remove them to use the verified catalog."
+    );
+  }
+}
+
+if (aiConfigured) {
+  console.log(
+    `[ai] model=${env.openai.model} prices=${openaiPricesConfigured ? env.openaiPrices.source : "MISSING"} ` +
+      `input=${env.openaiPrices.inputPricePerM}/1M cached=${env.openaiPrices.cachedInputPricePerM}/1M ` +
+      `output=${env.openaiPrices.outputPricePerM}/1M`
+  );
+}
 
 if (env.isProd && env.sessionSecret.startsWith("dev-only")) {
   console.warn("[config] SESSION_SECRET is not set — set it before running in production.");

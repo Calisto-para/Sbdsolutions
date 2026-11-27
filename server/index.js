@@ -191,6 +191,12 @@ app.use((error, req, res, next) => {
     return res.status(502).json({ error: error.message, code: "AI_UNAVAILABLE" });
   }
 
+  /* Checkout problems the customer can act on: unsupported currency, an amount
+     below the provider minimum, or no live exchange rate. */
+  if (["FX_UNAVAILABLE", "CURRENCY_UNSUPPORTED", "AMOUNT_TOO_SMALL"].includes(error?.code)) {
+    return res.status(error.status || 400).json({ error: error.message, code: error.code });
+  }
+
   if (error?.code === "LIMIT_FILE_SIZE") {
     return res.status(413).json({
       error: "That file is larger than the 10 MB limit. Compress the PDF or split it into smaller documents.",

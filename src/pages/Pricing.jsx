@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   SERVICES,
@@ -7,12 +6,10 @@ import {
   serviceExcludes,
   findService,
 } from "../../shared/project-services";
-import { CURRENCIES, formatPrice, readCurrency, rememberCurrency } from "../lib/currency";
+import { formatMoney } from "../../shared/currencies";
 
-const CURRENCY_LABEL = { NGN: "Naira (NGN)", USD: "US Dollars (USD)" };
-
-function PriceCard({ service, currency }) {
-  const price = currency === "NGN" ? service.ngn : service.usd;
+function PriceCard({ service }) {
+  const price = service.usd;
   const excludes = serviceExcludes(service);
 
   return (
@@ -22,7 +19,7 @@ function PriceCard({ service, currency }) {
         <span className="price-card-tag">Starting development price</span>
       </div>
       <p className="price-card-summary">{service.summary}</p>
-      <p className="price-card-amount">{formatPrice(price, currency)}</p>
+      <p className="price-card-amount">{formatMoney(price, "USD")}</p>
       <p className="price-card-note">
         Not a final quotation. The final amount is confirmed in writing after your requirements are reviewed.
       </p>
@@ -54,7 +51,7 @@ function PriceCard({ service, currency }) {
 
       <Link
         className="btn btn--primary price-card-btn"
-        to={`/start-a-project?service=${service.slug}&currency=${currency}`}
+        to={`/start-a-project?service=${service.slug}`}
       >
         Request a Project
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -67,15 +64,8 @@ function PriceCard({ service, currency }) {
 }
 
 export default function Pricing() {
-  const [currency, setCurrency] = useState(readCurrency);
-
-  const choose = (next) => {
-    setCurrency(next);
-    rememberCurrency(next);
-  };
-
   const example = findService("business-website");
-  const examplePrice = currency === "NGN" ? example.ngn : example.usd;
+  const examplePrice = example.usd;
   const deposit = Math.round((examplePrice * PAYMENT_SPLIT.deposit) / 100);
   const final = Math.round((examplePrice * PAYMENT_SPLIT.final) / 100);
 
@@ -91,8 +81,8 @@ export default function Pricing() {
             </nav>
             <h1>Clear starting prices. <span>No surprises.</span></h1>
             <p className="lead">
-              Every project starts with a transparent development price, a written scope and a final quotation before
-              any payment is made. Choose your currency and see exactly what each package includes.
+              Every project starts with a transparent US Dollar development price, a written scope and a final
+              quotation before any payment is made. See exactly what each package includes.
             </p>
             <div className="btn-row">
               <Link className="btn btn--primary" to="/start-a-project">
@@ -103,7 +93,7 @@ export default function Pricing() {
           </div>
           <aside className="page-tag">
             <strong>10</strong>
-            <p>Project categories with fixed starting prices in Naira and US Dollars.</p>
+            <p>Project categories with fixed starting prices in US Dollars.</p>
           </aside>
         </div>
       </section>
@@ -115,25 +105,10 @@ export default function Pricing() {
               <p className="eyebrow">Project pricing</p>
               <h2 className="section-title">Starting prices for <span>every service.</span></h2>
               <p className="pricing-intro">
-                These amounts are SBD Solutions&apos; professional development fees. They are not converted between
-                currencies, and they do not include third-party subscriptions, hosting or licences.
+                These amounts are SBD Solutions&apos; professional development fees, priced in US Dollars. At
+                checkout you can pay in your local currency at the current exchange rate — the USD price stays the
+                official amount. Third-party subscriptions, hosting and licences are not included.
               </p>
-            </div>
-            <div className="currency-switch" role="group" aria-label="Display currency">
-              <span className="currency-switch-label">Display currency</span>
-              <div className="currency-switch-buttons">
-                {CURRENCIES.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    className={currency === code ? "is-active" : ""}
-                    aria-pressed={currency === code}
-                    onClick={() => choose(code)}
-                  >
-                    {CURRENCY_LABEL[code]}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
 
@@ -141,7 +116,7 @@ export default function Pricing() {
 
           <div className="pricing-grid">
             {SERVICES.map((service) => (
-              <PriceCard key={service.slug} service={service} currency={currency} />
+              <PriceCard key={service.slug} service={service} />
             ))}
           </div>
         </div>
@@ -251,14 +226,14 @@ export default function Pricing() {
             </div>
             <dl className="payment-example">
               <div>
-                <dt>{example.name} at {formatPrice(examplePrice, currency)}</dt>
+                <dt>{example.name} at {formatMoney(examplePrice, "USD")}</dt>
                 <dd>
                   <span>Initial payment</span>
-                  <strong>{formatPrice(deposit, currency)}</strong>
+                  <strong>{formatMoney(deposit, "USD")}</strong>
                 </dd>
                 <dd>
                   <span>Final payment</span>
-                  <strong>{formatPrice(final, currency)}</strong>
+                  <strong>{formatMoney(final, "USD")}</strong>
                 </dd>
               </div>
             </dl>
@@ -280,7 +255,7 @@ export default function Pricing() {
               <p>Pick a service and send the details. You will receive a written quotation before any payment.</p>
             </div>
             <div className="cta-actions">
-              <Link className="btn btn--primary" to={`/start-a-project?currency=${currency}`}>
+              <Link className="btn btn--primary" to="/start-a-project">
                 Request a Project
               </Link>
               <a className="btn btn--ghost" href="https://wa.me/2349063924288" target="_blank" rel="noopener">

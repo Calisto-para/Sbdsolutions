@@ -120,7 +120,9 @@ export default function AdminPayments() {
                 <tr>
                   <th>Customer</th>
                   <th>Plan</th>
-                  <th>Amount</th>
+                  <th>Price (USD)</th>
+                  <th>Charged</th>
+                  <th>Country / rate</th>
                   <th>Reference</th>
                   <th>Submitted</th>
                   <th>Status</th>
@@ -137,10 +139,26 @@ export default function AdminPayments() {
                       <span>{payment.customerEmail}</span>
                     </td>
                     <td>{payment.planName}</td>
-                    <td>{money(payment.amount, payment.currency)}</td>
+                    <td>{money(payment.baseAmountUsd || payment.amount, "USD")}</td>
+                    <td>
+                      {payment.localAmount != null
+                        ? money(payment.localAmount, payment.paymentCurrency)
+                        : money(payment.amount, payment.currency)}
+                      <span>{payment.paymentCurrency || "USD"}</span>
+                    </td>
+                    <td>
+                      {payment.country || "—"}
+                      {payment.fxRate ? (
+                        <span>
+                          1 USD = {Number(payment.fxRate).toFixed(2)} {payment.paymentCurrency}
+                          {payment.fxCapturedAt ? ` · ${shortDate(payment.fxCapturedAt)}` : ""}
+                        </span>
+                      ) : null}
+                    </td>
                     <td>
                       <strong>{payment.reference || "—"}</strong>
                       <span>{payment.method === "paystack" ? "online" : "bank transfer"}</span>
+                      {payment.providerReference ? <span>provider: {payment.providerReference}</span> : null}
                     </td>
                     <td>
                       {payment.note || "—"}

@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
+import {
+  COUNTRIES,
+  countryFromTimezone,
+  findCountry,
+  formatMoney,
+} from "../../../shared/currencies";
 
 const money = (amount, currency) => `${currency} ${Number(amount || 0).toFixed(2)}`;
+
+const detectedCountry = () => {
+  try {
+    return countryFromTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {
+    return "US";
+  }
+};
 
 const WHATSAPP =
   "https://wa.me/2349063924288?text=" +
@@ -16,6 +30,7 @@ export default function Subscriptions() {
   const [busy, setBusy] = useState("");
   const [checkout, setCheckout] = useState(null);
   const [reference, setReference] = useState("");
+  const [country, setCountry] = useState(detectedCountry);
 
   const load = () =>
     api("/subscriptions")
@@ -56,12 +71,12 @@ export default function Subscriptions() {
     if (id) verify(id);
   }, [data?.planId]);
 
-  async function change(planId) {
+  async function change(planId, nextCountry = country) {
     setBusy(planId);
     setError("");
     setNotice("");
     try {
-      const next = await api("/subscriptions", { method: "POST", body: { planId } });
+      const next = await api("/subscriptions", { method: "POST", body: { planId, country: nextCountry } });
       setCheckout(next);
       setReference("");
       setNotice(next.message);
@@ -111,6 +126,9 @@ export default function Subscriptions() {
 
   if (error && !data) return <div className="form-alert form-alert--error">{error}</div>;
   if (!data) return <div className="dash-loading">Loading your plan…</div>;
+
+  const checkoutInfo = checkout?.checkout;
+  const selectedCountry = findCountry(checkoutInfo?.country || country) || findCountry("US");
 
   const messagePercent = Math.min(
     100,
@@ -210,16 +228,84 @@ export default function Subscriptions() {
           <div className="panel-head">
             <h2>Pay for the {checkout.payment.planId} plan</h2>
             <p>
-              Invoice <strong>{checkout.payment.reference}</strong> ·{" "}
-              {money(checkout.payment.amount, checkout.payment.currency)}
+              Invoice <strong>{checkout.payment.reference}</strong>
             </p>
           </div>
+
+          {checkoutInfo ? (
+            <div className="checkout-summary">
+              <div className="field">
+                <label htmlFor="checkoutCountry">Country you are paying from</label>
+                <select
+                  id="checkoutCountry"
+                  value={selectedCountry?.code || "US"}
+                  disabled={Boolean(busy)}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setCountry(next);
+                    if (checkout?.payment) change(checkout.payment.planId, next);
+                  }}
+                >
+                  {COUNTRIES.map((item) => (
+                    <option key={item.code} value={item.code}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <dl className="admin-facts checkout-facts">
+                <div>
+                  <dt>Price</dt>
+                  <dd>{formatMoney(checkoutInfo.baseAmountUsd, "USD")} per month</dd>
+                </div>
+                <div>
+                  <dt>Payment currency</dt>
+                  <dd>{checkoutInfo.paymentCurrency}</dd>
+                </div>
+                {checkoutInfo.local ? (
+                  <div>
+                    <dt>Exchange rate</dt>
+                    <dd>
+                      1 USD = {Number(checkoutInfo.fxRate).toLocaleString("en-US", { maximumFractionDigits: 4 })}{" "}
+                      {checkoutInfo.paymentCurrency}
+                      <span className="panel-note">
+                        {checkoutInfo.fxCapturedAt
+                          ? `Rate captured ${new Date(checkoutInfo.fxCapturedAt).toLocaleString()}`
+                          : "Live rate"}
+                        {checkoutInfo.fxStale ? " — the rate service is using its last saved rate" : ""}
+                      </span>
+                    </dd>
+                  </div>
+                ) : (
+                  <div>
+                    <dt>Local currency</dt>
+                    <dd>
+                      Card payments for {selectedCountry?.name || "your country"} are charged in USD. Your bank may
+                      apply its own conversion.
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Amount to pay</dt>
+                  <dd>
+                    <strong>{formatMoney(checkoutInfo.localAmount, checkoutInfo.paymentCurrency)}</strong>
+                  </dd>
+                </div>
+              </dl>
+              <p className="panel-note">
+                This is the exact amount sent to the payment provider. If the rate changes before you pay, open the
+                invoice again to see and confirm the new amount.
+              </p>
+            </div>
+          ) : null}
 
           {checkout.authorizationUrl ? (
             <div className="checkout-online">
               <p>Pay by card, bank transfer or USSD. The payment is confirmed instantly and the plan activates.</p>
               <a className="btn btn--primary btn--sm" href={checkout.authorizationUrl}>
-                Pay {money(checkout.payment.amount, checkout.payment.currency)} now
+                Pay {formatMoney(
+                  checkoutInfo?.localAmount ?? checkout.payment.amount,
+                  checkoutInfo?.paymentCurrency || checkout.payment.currency
+                )} now
               </a>
               {checkout.payment.status === "pending" ? (
                 <button
@@ -247,7 +333,18 @@ export default function Subscriptions() {
                 {bank.name ? <div><dt>Bank</dt><dd>{bank.name}</dd></div> : null}
                 <div><dt>Account name</dt><dd>{bank.accountName}</dd></div>
                 <div><dt>Account number</dt><dd>{bank.accountNumber}</dd></div>
-                <div><dt>Amount</dt><dd>{money(checkout.payment.amount, checkout.payment.currency)}</dd></div>
+                <div>
+                  <dt>Amount</dt>
+                  <dd>
+                    {formatMoney(
+                      checkoutInfo?.localAmount ?? checkout.payment.amount,
+                      checkoutInfo?.paymentCurrency || checkout.payment.currency
+                    )}
+                    {checkoutInfo?.local
+                      ? ` (USD ${checkoutInfo.baseAmountUsd.toFixed(2)} at the rate shown above)`
+                      : ""}
+                  </dd>
+                </div>
                 <div><dt>Reference</dt><dd>{checkout.payment.reference}</dd></div>
               </dl>
               {bank.instructions ? <p className="panel-note">{bank.instructions}</p> : null}
@@ -289,9 +386,28 @@ export default function Subscriptions() {
       ) : null}
 
       <section className="panel">
-        <div className="panel-head">
-          <h2>Available plans</h2>
-          <p>Payment is required — choosing a plan opens an invoice, it does not activate the plan by itself.</p>
+        <div className="panel-head panel-head--row">
+          <div>
+            <h2>Available plans</h2>
+            <p>
+              Prices are in USD. You pay in your local currency where card payments support it — the exact amount is
+              shown before you confirm.
+            </p>
+          </div>
+          <div className="field field--inline">
+            <label htmlFor="billingCountry">Paying from</label>
+            <select
+              id="billingCountry"
+              value={country}
+              onChange={(event) => setCountry(event.target.value)}
+            >
+              {COUNTRIES.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name} — {item.currency}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="plan-grid">
           {data.plans.map((plan) => {
@@ -358,7 +474,15 @@ export default function Subscriptions() {
           <ul className="activity-list">
             {pending.map((payment) => (
               <li key={payment.id}>
-                <strong>{payment.reference || "Invoice"} · {money(payment.amount, payment.currency)}</strong>
+                <strong>
+                  {payment.reference || "Invoice"} · {formatMoney(
+                    payment.localAmount ?? payment.amount,
+                    payment.paymentCurrency || payment.currency
+                  )}
+                  {payment.paymentCurrency && payment.paymentCurrency !== "USD"
+                    ? ` (USD ${Number(payment.baseAmountUsd || payment.amount).toFixed(2)})`
+                    : ""}
+                </strong>
                 <span>
                   {payment.planId} plan · {payment.method === "paystack" ? "online" : "bank transfer"}
                   {payment.note ? ` · reference: ${payment.note}` : ""} ·{" "}
@@ -395,7 +519,8 @@ export default function Subscriptions() {
                   <th>Date</th>
                   <th>Reference</th>
                   <th>Plan</th>
-                  <th>Amount</th>
+                  <th>Price (USD)</th>
+                  <th>Paid</th>
                   <th>Status</th>
                   <th>Note</th>
                 </tr>
@@ -406,7 +531,15 @@ export default function Subscriptions() {
                     <td>{dateFormat.format(new Date(payment.createdAt))}</td>
                     <td>{payment.reference || "—"}</td>
                     <td>{payment.planId}</td>
-                    <td>{money(payment.amount, payment.currency)}</td>
+                    <td>{money(payment.baseAmountUsd || payment.amount, "USD")}</td>
+                    <td>
+                      {payment.localAmount != null
+                        ? formatMoney(payment.localAmount, payment.paymentCurrency)
+                        : money(payment.amount, payment.currency)}
+                      {payment.fxRate && payment.paymentCurrency !== "USD" ? (
+                        <span className="panel-note">1 USD = {Number(payment.fxRate).toFixed(2)} {payment.paymentCurrency}</span>
+                      ) : null}
+                    </td>
                     <td>
                       <span className={`admin-pill${payment.status === "paid" ? "" : " admin-pill--muted"}`}>
                         {payment.status}

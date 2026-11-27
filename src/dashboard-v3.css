@@ -686,3 +686,29 @@
   font-size: 0.74rem;
   color: #7c8aa3;
 }
+
+/* Local-currency checkout ------------------------------------------------ */
+
+.checkout-summary {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.checkout-summary .field {
+  max-width: 340px;
+}
+
+.checkout-facts {
+  margin: 0;
+}
+
+.checkout-facts dd strong {
+  font-size: 1.1rem;
+  color: #0b1f3a;
+}
+
+.checkout-facts .panel-note {
+  display: block;
+  margin-top: 4px;
+}

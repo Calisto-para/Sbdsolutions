@@ -16,7 +16,7 @@ export const META = {
   "/pricing": {
     title: "Project Pricing | SBD AI Solutions",
     description:
-      "Transparent starting prices for websites, e-commerce, custom web applications, business systems, AI chatbots and automation from SBD AI Solutions, in Naira and US Dollars.",
+      "Transparent starting prices in US Dollars for websites, e-commerce, custom web applications, business systems, AI chatbots and automation from SBD AI Solutions, with local-currency payment at checkout.",
   },
   "/projects": {
     title: "Projects | SBD AI Solutions",

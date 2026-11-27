@@ -6,7 +6,7 @@ import { env } from "../env.js";
 import { currentPlan, subscriptionSummary } from "../plans.js";
 import {
   activatePayment,
-  amountMatches,
+  checkProviderPayment,
   initializePaystack,
   newReference,
   paystackEnabled,
@@ -15,12 +15,16 @@ import {
   paymentView,
   verifyPaystack,
 } from "../payments.js";
+import { quoteInCurrency, publicRates } from "../fx.js";
+import { COUNTRIES, PAYMENT_CURRENCIES, currencyForCountry, findCountry, formatMoney } from "../../shared/currencies.js";
 
 const router = express.Router();
 
 async function paymentsFor(userId) {
   const rows = await query(
-    `select id, plan_id, amount, currency, status, method, description, reference, note,
+    `select id, plan_id, amount, currency, base_amount_usd, base_currency, country,
+            payment_currency, local_amount, fx_rate, fx_captured_at, fx_source,
+            provider, provider_reference, status, method, description, reference, note,
             rejected_reason, verified_at, created_at
        from payments
       where user_id = $1
@@ -30,6 +34,21 @@ async function paymentsFor(userId) {
   );
   return rows.map(paymentView);
 }
+
+/* Country and currency options, plus when the current rates were captured.
+   No account is needed: the pricing page uses this to explain conversion. */
+router.get("/currencies", async (req, res, next) => {
+  try {
+    res.json({
+      baseCurrency: "USD",
+      countries: COUNTRIES,
+      currencies: Object.values(PAYMENT_CURRENCIES),
+      rates: await publicRates(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/", requireAuth, async (req, res, next) => {
   try {
@@ -64,7 +83,18 @@ router.get("/", requireAuth, async (req, res, next) => {
    until the money is verified. */
 router.post("/", requireAuth, async (req, res, next) => {
   try {
-    const { planId } = z.object({ planId: z.string().trim().min(2).max(40) }).parse(req.body);
+    const input = z
+      .object({
+        planId: z.string().trim().min(2).max(40),
+        country: z.string().trim().max(2).optional().default(""),
+        currency: z.string().trim().max(3).optional().default(""),
+      })
+      .parse(req.body);
+    const { planId } = input;
+    const country = findCountry(input.country);
+    const paymentCurrency = input.currency
+      ? input.currency.toUpperCase()
+      : currencyForCountry(country?.code);
     const plan = await one("select * from plans where id = $1", [planId]);
     if (!plan) return res.status(404).json({ error: "That plan does not exist." });
     if (plan.custom) {
@@ -87,6 +117,10 @@ router.post("/", requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: `You are already on the ${plan.name} plan.` });
     }
 
+    /* The price list is in USD. Convert it to the currency this customer will
+       actually be charged, with a live rate captured now. */
+    const quote = await quoteInCurrency(plan.price, paymentCurrency);
+
     /* One open invoice per plan, so double-clicking does not create duplicates. */
     const open = await one(
       `select * from payments
@@ -99,28 +133,61 @@ router.post("/", requireAuth, async (req, res, next) => {
     /* Show the plan price to the customer. The underlying cost is kept
        internal only — customers never see the $3/$10/$25 token cost. */
     const customerAmount = Number(plan.price);
-    const chargedAmount = Number(plan.price);
     const underlyingCost = plan.underlying_cost ? Number(plan.underlying_cost) : null;
+    const description = `${plan.name} plan — USD ${customerAmount.toFixed(2)} per month`;
+    const reference = newReference();
 
-    const payment =
-      open ||
-      (await one(
-        `insert into payments (user_id, plan_id, amount, currency, status, method, description, reference, charged_amount, token_limit, underlying_cost)
-         values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10)
-         returning *`,
-        [
-          req.user.id,
-          plan.id,
-          customerAmount,
-          plan.currency,
-          paystackEnabled() ? "paystack" : "transfer",
-          `${plan.name} plan — ${plan.currency} ${customerAmount.toFixed(2)} per month`,
-          newReference(),
-          chargedAmount,
-          plan.token_limit,
-          underlyingCost,
-        ]
-      ));
+    const payment = open
+      ? await one(
+          `update payments
+              set country = $2,
+                  payment_currency = $3,
+                  local_amount = $4,
+                  fx_rate = $5,
+                  fx_captured_at = $6,
+                  fx_source = $7,
+                  reference = case when payment_currency <> $3 or local_amount is distinct from $4 then $8 else reference end,
+                  base_amount_usd = coalesce(base_amount_usd, amount),
+                  base_currency = 'USD'
+            where id = $1
+            returning *`,
+          [
+            open.id,
+            country?.code || "",
+            quote.currency,
+            quote.localAmount,
+            quote.rate,
+            quote.capturedAt,
+            quote.source,
+            reference,
+          ]
+        )
+      : await one(
+          `insert into payments
+             (user_id, plan_id, amount, currency, base_amount_usd, base_currency, country,
+              payment_currency, local_amount, fx_rate, fx_captured_at, fx_source,
+              status, method, description, reference, charged_amount, token_limit, underlying_cost)
+           values ($1, $2, $3, 'USD', $3, 'USD', $4, $5, $6, $7, $8, $9,
+                   'pending', $10, $11, $12, $13, $14, $15)
+           returning *`,
+          [
+            req.user.id,
+            plan.id,
+            customerAmount,
+            country?.code || "",
+            quote.currency,
+            quote.localAmount,
+            quote.rate,
+            quote.capturedAt,
+            quote.source,
+            paystackEnabled() ? "paystack" : "transfer",
+            description,
+            reference,
+            customerAmount,
+            plan.token_limit,
+            underlyingCost,
+          ]
+        );
 
     let authorizationUrl = "";
     let onlineError = "";
@@ -129,25 +196,45 @@ router.post("/", requireAuth, async (req, res, next) => {
       try {
         const init = await initializePaystack({
           email: req.user.email,
+          payment,
           plan,
-          reference: payment.reference,
           callbackUrl: `${env.appUrl}/dashboard?tab=subscriptions&payment=${payment.id}`,
         });
         authorizationUrl = init.authorizationUrl;
       } catch (error) {
         console.error("[payments] paystack initialize failed:", error.message);
-        onlineError = error.message;
+        onlineError = /currency/i.test(error.message || "")
+          ? `Your Paystack account is not enabled to charge ${quote.currency}. Use the bank transfer details below, or pay in USD. (${error.message})`
+          : error.message;
       }
     }
 
+    const checkout = {
+      planId: plan.id,
+      planName: plan.name,
+      baseAmountUsd: quote.baseAmountUsd,
+      baseCurrency: "USD",
+      country: country?.code || "",
+      countryName: country?.name || "",
+      paymentCurrency: quote.currency,
+      localAmount: quote.localAmount,
+      fxRate: quote.rate,
+      fxCapturedAt: quote.capturedAt,
+      fxSource: quote.source,
+      fxStale: quote.stale,
+      local: quote.currency !== "USD",
+      methods: paymentConfig(),
+    };
+
     res.status(201).json({
       payment: paymentView(payment),
+      checkout,
       paymentConfig: paymentConfig(),
       authorizationUrl,
       onlineError,
       message: authorizationUrl
-        ? `Invoice ${payment.reference} created. Pay ${plan.currency} ${Number(plan.price).toFixed(2)} to activate the ${plan.name} plan — online payments are confirmed instantly.`
-        : `Invoice ${payment.reference} created. Pay ${plan.currency} ${Number(plan.price).toFixed(2)} by bank transfer and submit your reference; the SBD team verifies it and your plan activates.`,
+        ? `Invoice ${payment.reference} created. Pay ${formatMoney(quote.localAmount, quote.currency)} (USD ${customerAmount.toFixed(2)}) to activate the ${plan.name} plan — online payments are confirmed instantly.`
+        : `Invoice ${payment.reference} created. Pay ${formatMoney(quote.localAmount, quote.currency)} (USD ${customerAmount.toFixed(2)}) by bank transfer and submit your reference; the SBD team verifies it and your plan activates.`,
       ...(await subscriptionSummary(req.user.id)),
     });
   } catch (error) {
@@ -181,14 +268,24 @@ router.post("/payments/:id/verify", requireAuth, async (req, res, next) => {
         code: "PAYMENT_NOT_COMPLETED",
       });
     }
-    if (!amountMatches(payment, data.amount)) {
-      return res.status(400).json({
-        error: "The amount paid does not match this invoice. Message us on WhatsApp (+234 906 392 4288) so we can check it.",
-        code: "AMOUNT_MISMATCH",
-      });
+
+    /* Reference, currency and amount must all match the invoice shown to the
+       customer. A mismatch never activates a plan. */
+    const check = checkProviderPayment(payment, data);
+    if (!check.ok) {
+      console.error(`[payments] verification refused for ${payment.reference}: ${check.code}`);
+      return res.status(400).json({ error: check.error, code: check.code });
     }
 
-    await activatePayment(payment, { method: "paystack" });
+    await query(
+      `update payments
+          set provider = 'paystack',
+              provider_reference = $2,
+              currency = coalesce(nullif(currency, ''), 'USD')
+        where id = $1`,
+      [payment.id, String(data.reference || payment.reference)]
+    );
+    await activatePayment({ ...payment, status: payment.status }, { method: "paystack" });
     res.json({
       ...(await subscriptionSummary(req.user.id)),
       payments: await paymentsFor(req.user.id),

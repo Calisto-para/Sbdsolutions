@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { query, one } from "./db.js";
 import { env } from "./env.js";
+import { toMinorUnits } from "../shared/currencies.js";
 
 /* Plan payments. A plan change never applies on its own: it creates an invoice,
    and the subscription moves only when that invoice is verified — instantly by
@@ -36,8 +37,19 @@ export function newReference() {
 export const paymentView = (row) => ({
   id: row.id,
   planId: row.plan_id,
+  /* `amount`/`currency` are the official USD price and never change. */
   amount: Number(row.amount),
-  currency: row.currency,
+  currency: row.currency || "USD",
+  baseAmountUsd: Number(row.base_amount_usd ?? row.amount ?? 0),
+  baseCurrency: row.base_currency || "USD",
+  country: row.country || "",
+  paymentCurrency: row.payment_currency || row.currency || "USD",
+  localAmount: row.local_amount == null ? null : Number(row.local_amount),
+  fxRate: row.fx_rate == null ? null : Number(row.fx_rate),
+  fxCapturedAt: row.fx_captured_at || null,
+  fxSource: row.fx_source || "",
+  provider: row.provider || "",
+  providerReference: row.provider_reference || "",
   status: row.status,
   method: row.method,
   description: row.description,
@@ -68,17 +80,30 @@ async function paystack(path, options = {}) {
   return data.data || {};
 }
 
-export async function initializePaystack({ email, plan, reference, callbackUrl }) {
-  const currency = env.payments.paystack.currency || plan.currency;
+/* Charge the local amount the customer was shown, in the currency they were
+   shown, with the reference recorded on the invoice. The USD price stays the
+   official value; nothing here rewrites it. */
+export async function initializePaystack({ email, payment, plan, callbackUrl }) {
+  const currency = payment.payment_currency || "USD";
+  const amount = toMinorUnits(payment.local_amount ?? payment.amount, currency);
+  const reference = payment.reference;
   const data = await paystack("/transaction/initialize", {
     method: "POST",
     body: JSON.stringify({
       email,
-      amount: Math.round(Number(plan.price) * 100),
+      amount,
       currency,
       reference,
       callback_url: callbackUrl,
-      metadata: { planId: plan.id, planName: plan.name },
+      metadata: {
+        planId: plan.id,
+        planName: plan.name,
+        invoiceId: payment.id,
+        baseAmountUsd: Number(payment.base_amount_usd ?? payment.amount),
+        paymentCurrency: currency,
+        localAmount: Number(payment.local_amount ?? payment.amount),
+        fxRate: payment.fx_rate == null ? null : Number(payment.fx_rate),
+      },
     }),
   });
   if (!data.authorization_url) throw new Error("Paystack did not return a payment link.");
@@ -122,6 +147,31 @@ export async function activatePayment(payment, { verifiedBy = null, method = "" 
   return updated || payment;
 }
 
-/* Amount check for a provider response, tolerating minor-unit rounding. */
-export const amountMatches = (payment, paidMinor) =>
-  Math.abs(Number(paidMinor) / 100 - Number(payment.amount)) < 0.02;
+/* Provider verification. The reference, currency and amount must all match the
+   invoice the customer was shown. Anything else is refused — a payment in a
+   different currency or for a different amount never activates a plan. */
+export function checkProviderPayment(payment, data) {
+  const currency = String(data?.currency || "").toUpperCase();
+  const expectedCurrency = String(payment.payment_currency || payment.currency || "USD").toUpperCase();
+  const paidMinor = Number(data?.amount);
+  const expectedMinor = toMinorUnits(payment.local_amount ?? payment.amount, expectedCurrency);
+
+  if (String(payment.reference || "") && String(data?.reference || "") && data.reference !== payment.reference) {
+    return { ok: false, code: "REFERENCE_MISMATCH", error: "The payment reference does not match this invoice. Nothing was activated; the SBD team will reconcile it." };
+  }
+  if (currency && currency !== expectedCurrency) {
+    return {
+      ok: false,
+      code: "CURRENCY_MISMATCH",
+      error: `The provider charged ${currency} but this invoice is in ${expectedCurrency}. Nothing was activated; the SBD team will reconcile it.`,
+    };
+  }
+  if (!Number.isFinite(paidMinor) || Math.abs(paidMinor - expectedMinor) > 1) {
+    return {
+      ok: false,
+      code: "AMOUNT_MISMATCH",
+      error: "The amount paid does not match this invoice. Nothing was activated; message us on WhatsApp (+234 906 392 4288) so we can check it.",
+    };
+  }
+  return { ok: true };
+}

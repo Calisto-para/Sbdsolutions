@@ -69,6 +69,14 @@ export const env = {
     cachedInputPricePerM:
       Number.parseFloat(process.env.OPENAI_CACHED_INPUT_PRICE_PER_M || ""),
   },
+  /* Live exchange rates for local-currency checkout. The price list is always
+     in USD; the rate is fetched (never hardcoded), cached briefly, and the
+     exact rate is stored with each payment. */
+  fx: {
+    url: process.env.FX_API_URL || "https://open.er-api.com/v6/latest/USD",
+    baseCurrency: process.env.FX_BASE_CURRENCY || "USD",
+    cacheMinutes: Number(process.env.FX_CACHE_MINUTES || 360),
+  },
   /* Where project enquiries are emailed. Falls back to the reply-to address. */
   projectEnquiryEmail:
     (process.env.PROJECT_ENQUIRY_EMAIL || process.env.MAIL_REPLY_TO || "sbdiam.solutions@gmail.com").trim(),

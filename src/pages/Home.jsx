@@ -90,7 +90,6 @@ const SERVICE_CARDS = [
 const PRICE_ROWS = SERVICES.map((service) => ({
   slug: service.slug,
   name: service.name,
-  ngn: service.ngn,
   usd: service.usd,
 }));
 
@@ -117,7 +116,7 @@ const PROCESS = [
   },
 ];
 
-const currency = (value) => `₦${value.toLocaleString("en-NG")}`;
+const usd = (value) => `$${Number(value || 0).toLocaleString("en-US")}`;
 
 export default function Home() {
   return (
@@ -299,8 +298,8 @@ export default function Home() {
               </h2>
             </div>
             <p className="lead">
-              These are development starting prices, shown in Naira and US Dollars. They are separate from the
-              monthly AI platform subscription and are confirmed in a written quotation.
+              These are development starting prices in US Dollars, with local currency shown at checkout. They are
+              separate from the monthly AI platform subscription and are confirmed in a written quotation.
             </p>
           </div>
 
@@ -309,8 +308,8 @@ export default function Home() {
               <Link className="price-row" key={row.slug} to={`/pricing#pricing`}>
                 <span className="price-row-name">{row.name}</span>
                 <span className="price-row-amount">
-                  <strong>{currency(row.ngn)}</strong>
-                  <em>${row.usd.toLocaleString("en-US")}</em>
+                  <strong>{usd(row.usd)}</strong>
+                  <em>starting price</em>
                 </span>
               </Link>
             ))}

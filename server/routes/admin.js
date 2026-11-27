@@ -539,7 +539,9 @@ const PROJECT_PAYMENT_STATUSES = ["Unpaid", "Deposit paid", "Part paid", "Paid",
 
 const projectApi = (row) => {
   const service = findService(row.service);
-  const fallbackPrice = service ? startingPrice(service, row.starting_price_currency || row.currency) : 0;
+  /* Starting prices are USD; older enquiries may still carry a converted
+     amount, so the stored value wins and the catalogue is the fallback. */
+  const fallbackPrice = service ? startingPrice(service) : 0;
   return {
     id: row.id,
     reference: `SBD-${String(row.id).slice(0, 8).toUpperCase()}`,

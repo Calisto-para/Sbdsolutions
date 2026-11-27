@@ -38,7 +38,9 @@ const enquirySchema = z.object({
     .max(40)
     .refine((value) => value.replace(/\D/g, "").length >= 7, "Enter a valid phone or WhatsApp number."),
   service: z.enum(SERVICE_SLUGS, { message: "Choose the service you are enquiring about." }),
-  currency: z.enum(["NGN", "USD"], { message: "Choose NGN or USD." }),
+  /* Every project is priced in USD. A currency sent by an older client is
+     accepted but never changes the quoted starting price. */
+  currency: z.string().trim().max(3).optional().default("USD"),
   estimatedBudget: z.string().trim().max(80).optional().default(""),
   description: z
     .string()
@@ -52,14 +54,14 @@ router.post("/", limiter, async (req, res, next) => {
   try {
     const body = enquirySchema.parse(req.body);
     const service = findService(body.service);
-    const price = startingPrice(service, body.currency);
+    const price = startingPrice(service);
 
     const row = await one(
       `insert into project_enquiries
          (full_name, business_name, email, phone, service, currency, estimated_budget,
           description, additional_requirements, starting_price_amount, starting_price_currency,
-          payment_arrangement, notification_status)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+          base_amount_usd, payment_currency, payment_arrangement, notification_status)
+       values ($1, $2, $3, $4, $5, 'USD', $6, $7, $8, $9, 'USD', $9, 'USD', $10, 'pending')
        returning *`,
       [
         body.fullName,
@@ -67,12 +69,10 @@ router.post("/", limiter, async (req, res, next) => {
         body.email.toLowerCase(),
         body.phone,
         body.service,
-        body.currency,
         body.estimatedBudget,
         body.description,
         body.additionalRequirements,
         price,
-        body.currency,
         "60% upfront before development begins; 40% before final launch or handover",
       ]
     );
@@ -114,7 +114,7 @@ router.post("/", limiter, async (req, res, next) => {
       enquiryId: row.id,
       reference,
       service: service.name,
-      startingPrice: { amount: price, currency: body.currency },
+      startingPrice: { amount: price, currency: "USD" },
       notification: {
         delivered,
         message: delivered

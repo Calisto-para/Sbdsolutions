@@ -1,13 +1,14 @@
 /* Single source of truth for project starting prices and scope.
    Both the public pricing page and the enquiry API read this file, so a price
-   can never drift between what a visitor sees and what is saved. Starting
-   prices are fixed per currency — they are not converted. */
+   can never drift between what a visitor sees and what is saved.
+
+   USD is the official pricing currency. Local-currency amounts are produced at
+   checkout from a live exchange rate and are never stored here. */
 
 export const SERVICES = [
   {
     slug: "business-website",
     name: "Business Website",
-    ngn: 200000,
     usd: 200,
     summary: "A credible company website that explains what you do and turns visitors into enquiries.",
     includes: [
@@ -25,7 +26,6 @@ export const SERVICES = [
   {
     slug: "corporate-website",
     name: "Corporate Website",
-    ngn: 300000,
     usd: 300,
     summary: "A fuller corporate site with the structure and credibility a growing organisation needs.",
     includes: [
@@ -43,7 +43,6 @@ export const SERVICES = [
   {
     slug: "ecommerce-website",
     name: "E-commerce Website",
-    ngn: 400000,
     usd: 400,
     summary: "An online store with a product catalogue, cart, checkout and order management.",
     includes: [
@@ -61,7 +60,6 @@ export const SERVICES = [
   {
     slug: "custom-web-application",
     name: "Custom Web Application",
-    ngn: 500000,
     usd: 500,
     summary: "A web application built around your exact workflow, with accounts, roles and a database.",
     includes: [
@@ -78,7 +76,6 @@ export const SERVICES = [
   {
     slug: "business-management-system",
     name: "Business Management System",
-    ngn: 500000,
     usd: 500,
     summary: "An internal system for customers, sales, inventory, staff and day-to-day reporting.",
     includes: [
@@ -94,7 +91,6 @@ export const SERVICES = [
   {
     slug: "booking-reservation-platform",
     name: "Booking and Reservation Platform",
-    ngn: 350000,
     usd: 350,
     summary: "Let customers check availability, book, pay where required and receive confirmation.",
     includes: [
@@ -111,7 +107,6 @@ export const SERVICES = [
   {
     slug: "ai-chatbot-integration",
     name: "AI Chatbot Integration",
-    ngn: 150000,
     usd: 150,
     summary: "An AI assistant trained on your business information and embedded on your website.",
     includes: [
@@ -127,7 +122,6 @@ export const SERVICES = [
   {
     slug: "whatsapp-ai-automation",
     name: "WhatsApp AI Automation",
-    ngn: 200000,
     usd: 200,
     summary: "AI replies and lead capture on WhatsApp, with a clean handover to your team.",
     includes: [
@@ -145,7 +139,6 @@ export const SERVICES = [
   {
     slug: "business-workflow-automation",
     name: "Business Workflow Automation",
-    ngn: 150000,
     usd: 150,
     summary: "Connect your tools and remove repetitive manual steps from daily operations.",
     includes: [
@@ -160,7 +153,6 @@ export const SERVICES = [
   {
     slug: "custom-ai-application",
     name: "Custom AI Application",
-    ngn: 500000,
     usd: 500,
     summary: "A purpose-built AI product trained on your data and designed around your process.",
     includes: [
@@ -194,9 +186,9 @@ export function findService(slug) {
   return SERVICES.find((service) => service.slug === slug) || null;
 }
 
-export function startingPrice(service, currency) {
+export function startingPrice(service) {
   if (!service) return null;
-  return currency === "NGN" ? service.ngn : service.usd;
+  return service.usd;
 }
 
 export function serviceExcludes(service) {

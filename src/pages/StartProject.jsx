@@ -1,13 +1,12 @@
 import { Link, useSearchParams } from "react-router-dom";
 import ProjectForm from "../components/ProjectForm";
 import { findService, startingPrice } from "../../shared/project-services";
-import { formatPrice } from "../lib/currency";
+import { formatMoney } from "../../shared/currencies";
 
 export default function StartProject() {
   const [params] = useSearchParams();
   const service = findService(params.get("service"));
-  const currency = params.get("currency") === "NGN" ? "NGN" : params.get("currency") === "USD" ? "USD" : "";
-  const price = service ? startingPrice(service, currency || "USD") : null;
+  const price = service ? startingPrice(service) : null;
   return (
     <>
 <section className="page-hero">
@@ -31,16 +30,16 @@ export default function StartProject() {
         <p>
           The more detail you give, the more useful our first reply will be. Fields marked with an asterisk are
           required.{" "}
-          {service && currency ? (
+          {service && price ? (
             <>
-              Starting development price for this package: <strong>{formatPrice(price, currency)}</strong>. The final
+              Starting development price for this package: <strong>{formatMoney(price, "USD")}</strong>. The final
               quotation is confirmed after review — nothing is charged now.{" "}
             </>
           ) : null}
           <Link to="/pricing">Compare all project prices</Link>.
         </p>
 
-        <ProjectForm initialService={service?.slug || ""} initialCurrency={currency} />
+        <ProjectForm initialService={service?.slug || ""} />
       </div>
     </div>
   </section>

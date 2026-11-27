@@ -306,3 +306,27 @@ create index if not exists knowledge_user_idx on knowledge_items (user_id, creat
 
 /* Older project_enquiries tables may predate the owner column. */
 alter table project_enquiries add column if not exists user_id uuid references users(id) on delete set null;
+
+/* USD is the official pricing currency. Local-currency checkout stores both:
+   the USD price is never overwritten by the converted amount. */
+alter table payments add column if not exists base_amount_usd numeric(10, 2);
+alter table payments add column if not exists base_currency text not null default 'USD';
+alter table payments add column if not exists country text not null default '';
+alter table payments add column if not exists payment_currency text not null default 'USD';
+alter table payments add column if not exists local_amount numeric(14, 2);
+alter table payments add column if not exists fx_rate numeric(18, 8);
+alter table payments add column if not exists fx_captured_at timestamptz;
+alter table payments add column if not exists fx_source text not null default '';
+alter table payments add column if not exists provider text not null default '';
+alter table payments add column if not exists provider_reference text not null default '';
+create unique index if not exists payments_provider_reference_idx on payments (provider, provider_reference)
+  where provider_reference <> '';
+
+/* Project enquiries are quoted in USD. Local-currency information is recorded
+   for reference and never replaces the USD starting price. */
+alter table project_enquiries add column if not exists base_amount_usd numeric(12, 2);
+alter table project_enquiries add column if not exists payment_currency text not null default 'USD';
+alter table project_enquiries add column if not exists country text not null default '';
+alter table project_enquiries add column if not exists local_amount numeric(14, 2);
+alter table project_enquiries add column if not exists fx_rate numeric(18, 8);
+alter table project_enquiries add column if not exists fx_captured_at timestamptz;

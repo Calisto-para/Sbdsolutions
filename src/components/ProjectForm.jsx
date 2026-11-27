@@ -311,9 +311,8 @@ export default function ProjectForm({ initialService = "" }) {
 
       <p className="form-note">
         Prices are quoted in US Dollars. When a payment is due, checkout shows the exact amount in your local
-        currency at the current exchange rate before you confirm. Your enquiry is saved securely and sent to
-        sbdiam.solutions@gmail.com. Submitting it does not charge you or confirm a project — a final quotation is
-        prepared first. Prefer WhatsApp?{" "}
+        currency at the current exchange rate before you confirm. Submitting this form does not charge you or confirm
+        a project — a final quotation is prepared first. Prefer WhatsApp?{" "}
         <a href="https://wa.me/2349063924288" target="_blank" rel="noopener">Message us directly</a>.
       </p>
     </form>

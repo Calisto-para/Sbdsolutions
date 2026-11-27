@@ -73,8 +73,18 @@
     writeStore(visitorStore, visitorId);
   }
 
+  /* Earlier versions kept the open conversation in sessionStorage. Adopt it
+     once so a visitor chatting when the widget was updated keeps their chat. */
+  function readLegacyConversation() {
+    try {
+      return window.sessionStorage.getItem("sbd-chat-" + key) || "";
+    } catch (error) {
+      return "";
+    }
+  }
+
   var state = {
-    conversationId: readStore(conversationStore),
+    conversationId: readStore(conversationStore) || readLegacyConversation(),
     status: "",
     takeover: false,
     messages: [],
@@ -419,6 +429,9 @@
         state.status = data.status || "";
         state.takeover = Boolean(data.takeover);
         state.messages = data.messages || [];
+        /* Persist the adopted conversation under the shared key, so every tab
+           and later visits reopen the same chat. */
+        if (!readStore(conversationStore)) writeStore(conversationStore, state.conversationId);
         if (state.status === "resolved") stopPoll();
         render();
       })

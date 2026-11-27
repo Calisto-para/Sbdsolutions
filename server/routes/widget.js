@@ -348,8 +348,11 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       /* The visitor's message is stored and marked failed, so a retry with the
          same client id can try again without creating a duplicate. */
       await query("update messages set status = 'failed' where id = $1", [userMessage.id]);
-      if (error?.code === "AI_UNAVAILABLE") {
-        return res.status(502).json({
+      /* Both failures happen after the visitor's message is stored, so the ids
+         go back with the error: the widget then keeps the chat in history
+         instead of treating it as a message that never arrived. */
+      if (error?.code === "AI_UNAVAILABLE" || error?.code === "AI_NOT_CONFIGURED") {
+        return res.status(error.status || 502).json({
           error: error.message,
           code: error.code,
           conversationId: conversation.id,

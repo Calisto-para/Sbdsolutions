@@ -199,6 +199,14 @@
   tools.appendChild(historyButton);
 
   var historyBox = el("div", "sbdw-history");
+  /* The list is hidden by default, so the button has to open it: without this
+     handler "Previous chats" counted the chats and then did nothing. */
+  historyButton.setAttribute("aria-expanded", "false");
+  historyButton.addEventListener("click", function () {
+    var isOpen = historyBox.className.indexOf("is-open") >= 0;
+    historyBox.className = isOpen ? "sbdw-history" : "sbdw-history is-open";
+    historyButton.setAttribute("aria-expanded", isOpen ? "false" : "true");
+  });
   var log = el("div", "sbdw-log");
   var status = el("div", "sbdw-status");
 
@@ -348,7 +356,12 @@
         if (!state.conversationId && data.open && data.open.id) {
           state.conversationId = data.open.id;
           writeStore(conversationStore, state.conversationId);
-          return loadConversation();
+          /* Rebuilding the open chat must not skip drawing the list: a returning
+             visitor would otherwise get no "Previous chats" at all. */
+          return loadConversation().then(function () {
+            paintHistory();
+            paintControls();
+          });
         }
         paintHistory();
         paintControls();
@@ -360,6 +373,7 @@
     historyBox.innerHTML = "";
     if (!state.history.length) {
       historyBox.className = "sbdw-history";
+      historyButton.setAttribute("aria-expanded", "false");
       return;
     }
     historyBox.appendChild(el("span", "sbdw-history-title", "Earlier conversations"));
@@ -380,6 +394,7 @@
   function viewConversation(item) {
     setStatus("");
     historyBox.className = "sbdw-history";
+    historyButton.setAttribute("aria-expanded", "false");
     state.viewing = { id: item.id, title: item.title, messages: [] };
     render("Loading that conversation…");
     fetch(base + "/api/widget/" + key + "/conversation/" + encodeURIComponent(item.id))
@@ -683,6 +698,9 @@
           if (error.code === "AI_UNAVAILABLE") details.className = "sbdw-details is-open";
           return loadConversation().then(function () {
             render(savedNote);
+            /* The message was stored, so the chat belongs in Previous chats even
+               though the assistant never answered. */
+            loadHistory();
           });
         }
 

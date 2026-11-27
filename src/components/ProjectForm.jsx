@@ -101,7 +101,7 @@ export default function ProjectForm({ initialService = "" }) {
         setStatus({
           kind: "error",
           message:
-            "The enquiry could not be sent. Please try again, or email sbdiam.solutions@gmail.com or message us on WhatsApp (+234 906 392 4288).",
+            "The enquiry could not be sent. Please try again in a moment, or message us on WhatsApp (+234 906 392 4288).",
         });
       }
     } finally {
@@ -139,8 +139,11 @@ export default function ProjectForm({ initialService = "" }) {
         {success.notification && !success.notification.delivered ? (
           <p className="enquiry-warning">
             Your enquiry is safely stored, but the notification email could not be delivered. The team can still see
-            it. If you would like to be certain, email <a href="mailto:sbdiam.solutions@gmail.com">sbdiam.solutions@gmail.com</a>.
+            it in the dashboard.
           </p>
+        ) : null}
+        {success.acknowledgement && success.acknowledgement.delivered ? (
+          <p className="enquiry-note">A confirmation has been emailed to you.</p>
         ) : null}
         <p className="enquiry-note">No payment has been taken. The starting price is not the final amount payable.</p>
         <button type="button" className="btn btn--ghost" onClick={reset}>

@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { one, query } from "../db.js";
 import { env } from "../env.js";
-import { sendProjectEnquiryEmail } from "../mail.js";
+import { sendProjectEnquiryEmail, sendProjectEnquiryAcknowledgementEmail } from "../mail.js";
 import { SERVICES, findService, startingPrice } from "../../shared/project-services.js";
 
 /* Public project enquiries. A submission is written to the database first and
@@ -108,6 +108,20 @@ router.post("/", limiter, async (req, res, next) => {
       [row.id, delivered ? "sent" : "failed", notificationError]
     );
 
+    /* The customer's own confirmation is best-effort too: the enquiry is already
+       stored and the owner already notified, so a mail failure here is only
+       reported, never a failed submission. */
+    let acknowledged = false;
+    try {
+      const ack = await sendProjectEnquiryAcknowledgementEmail(
+        { ...row, serviceName: service.name, startingPrice: price },
+        row.email
+      );
+      acknowledged = Boolean(ack?.delivered);
+    } catch (error) {
+      console.error(`[enquiry] acknowledgement failed for ${row.id} — ${error.message}`);
+    }
+
     const reference = `SBD-${String(row.id).slice(0, 8).toUpperCase()}`;
     res.status(201).json({
       ok: true,
@@ -120,6 +134,12 @@ router.post("/", limiter, async (req, res, next) => {
         message: delivered
           ? "The team has been notified by email."
           : "The enquiry was saved, but the notification email could not be delivered. The team can still see it in the dashboard.",
+      },
+      acknowledgement: {
+        delivered: acknowledged,
+        message: acknowledged
+          ? "A confirmation has been emailed to you."
+          : "A confirmation email could not be sent to you, but your enquiry is saved.",
       },
       message:
         "Your enquiry has been saved. SBD Solutions will review it and send a final quotation before any payment is requested.",

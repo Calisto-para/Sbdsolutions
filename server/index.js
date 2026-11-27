@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import { env, dbConfigured, emailConfigured, aiConfigured } from "./env.js";
 import { aiStatus } from "./ai.js";
-import { emailProviderName, emailProviders } from "./mail.js";
+import { emailProviderName, emailProviders, mailStatusSnapshot } from "./mail.js";
 import { senderWarning, emailHealthSnapshot } from "./mail-check.js";
 import { dbKind, dbState, getImplementation } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -71,6 +71,9 @@ app.get("/api/health", (req, res) => {
     emailProvider: emailProviderName,
     emailProviders: emailProviders(),
     emailProviderRequested: env.mail.provider || "",
+    /* Why the last outgoing message failed, if any: reason code and a short
+       provider message with every email address stripped out. */
+    mailStatus: mailStatusSnapshot(),
     /* Which sender variables this service can actually see. Presence only — no values. */
     emailEnv: {
       BREVO_API_KEY: Boolean(process.env.BREVO_API_KEY),
@@ -78,6 +81,8 @@ app.get("/api/health", (req, res) => {
       RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
       SMTP_HOST: Boolean(process.env.SMTP_HOST),
       MAIL_FROM: process.env.MAIL_FROM ? "set" : "default",
+      MAIL_REPLY_TO: process.env.MAIL_REPLY_TO ? "set" : "empty",
+      PROJECT_ENQUIRY_EMAIL: process.env.PROJECT_ENQUIRY_EMAIL ? "set" : "default",
       EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || "auto",
     },
     aiConfigured,

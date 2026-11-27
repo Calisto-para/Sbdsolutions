@@ -20,6 +20,47 @@ const from = parseFrom(env.mail.from);
 
 const toList = (to) => (Array.isArray(to) ? to : [to]).filter(Boolean);
 
+/* MAIL_REPLY_TO is often written by hand: a display name, several addresses or
+   a stray comma makes the whole message invalid at the provider. Keep the first
+   real address and drop everything else. */
+function firstEmail(value) {
+  const raw = String(value || "");
+  const angle = raw.match(/<([^>]+)>/);
+  const candidate = angle ? angle[1] : raw;
+  const found = candidate.match(/[^\s,;<>"']+@[^\s,;<>"']+\.[^\s,;<>"']+/);
+  return found ? found[0].trim() : "";
+}
+
+const cleanReplyTo = (value) => firstEmail(value) || firstEmail(env.mail.replyTo);
+
+/* Kept in memory so /api/health can say why the last send failed without
+   exposing keys, addresses or message bodies. */
+const mailState = { lastSuccessAt: null, lastSuccessProvider: "", lastFailure: null };
+
+const reasonFor = (message) => {
+  const text = String(message || "");
+  if (/quota|limit|credit/i.test(text)) return "quota_reached";
+  if (/unauthorized|key not found|401|403/i.test(text)) return "key_rejected";
+  if (/reply.?to/i.test(text)) return "reply_to_rejected";
+  if (/sender|from address/i.test(text)) return "sender_not_verified";
+  if (/recipient|to address|invalid email/i.test(text)) return "recipient_rejected";
+  return "provider_error";
+};
+
+const sanitise = (message) =>
+  String(message || "")
+    .replace(/[^\s,;<>"']+@[^\s,;<>"']+/g, "[address]")
+    .replace(/\s+/g, " ")
+    .slice(0, 240);
+
+export function mailStatusSnapshot() {
+  return {
+    lastSuccessAt: mailState.lastSuccessAt,
+    lastSuccessProvider: mailState.lastSuccessProvider,
+    lastFailure: mailState.lastFailure,
+  };
+}
+
 let smtpTransport = null;
 function smtp() {
   if (!smtpTransport) {
@@ -49,7 +90,7 @@ async function postJson(url, headers, payload) {
 
 /* Brevo — POST /v3/smtp/email. Authenticates with the `api-key` header. */
 async function sendWithBrevo({ to, subject, text, html, replyTo }) {
-  const reply = replyTo || env.mail.replyTo;
+  const reply = cleanReplyTo(replyTo);
   return postJson(
     env.mail.brevo.apiUrl,
     { "api-key": env.mail.brevo.apiKey },
@@ -66,7 +107,7 @@ async function sendWithBrevo({ to, subject, text, html, replyTo }) {
 
 /* Resend — POST /emails. Authenticates with a bearer token. */
 async function sendWithResend({ to, subject, text, html, replyTo }) {
-  const reply = replyTo || env.mail.replyTo;
+  const reply = cleanReplyTo(replyTo);
   return postJson(
     env.mail.resend.apiUrl,
     { authorization: `Bearer ${env.mail.resend.apiKey}` },
@@ -82,13 +123,14 @@ async function sendWithResend({ to, subject, text, html, replyTo }) {
 }
 
 async function sendWithSmtp({ to, subject, text, html, replyTo }) {
+  const reply = cleanReplyTo(replyTo);
   await smtp().sendMail({
     from: from.formatted,
     to: toList(to),
     subject,
     text,
     html,
-    ...(replyTo || env.mail.replyTo ? { replyTo: replyTo || env.mail.replyTo } : {}),
+    ...(reply ? { replyTo: reply } : {}),
   });
 }
 
@@ -124,15 +166,37 @@ async function send({ to, subject, text, html, link, replyTo }) {
   }
 
   const failures = [];
-  const recipients = toList(to);
+  /* Validate every recipient: one malformed entry makes the provider reject
+     the whole message, so the owner notification would never arrive. */
+  const recipients = [...new Set(toList(to).map(firstEmail).filter(Boolean))];
+  if (!recipients.length) {
+    console.error(`[mail] "${subject}" has no valid recipient — not sent.`);
+    return { delivered: false, previewUrl: link, failures: ["no valid recipient address"] };
+  }
   for (const name of order) {
     try {
-      await SENDERS[name]({ to: recipients, subject, text, html, replyTo });
+      try {
+        await SENDERS[name]({ to: recipients, subject, text, html, replyTo });
+      } catch (error) {
+        /* A malformed reply-to is the one field that stops an otherwise valid
+           message, so retry once without it before giving up on the provider. */
+        if (!cleanReplyTo(replyTo) || !/reply.?to/i.test(error.message)) throw error;
+        await SENDERS[name]({ to: recipients, subject, text, html, replyTo: "" });
+      }
       console.log(`[mail] "${subject}" delivered to ${recipients.join(", ")} via ${name}`);
+      mailState.lastSuccessAt = new Date().toISOString();
+      mailState.lastSuccessProvider = name;
+      mailState.lastFailure = null;
       return { delivered: true, provider: name };
     } catch (error) {
       failures.push(`${name}: ${error.message}`);
       console.error(`[mail] ${name} failed for ${to} — ${error.message}`);
+      mailState.lastFailure = {
+        at: new Date().toISOString(),
+        provider: name,
+        reason: reasonFor(error.message),
+        detail: sanitise(error.message),
+      };
     }
   }
 
@@ -214,6 +278,59 @@ export function sendProjectEnquiryEmail(enquiry, to) {
 
   /* Reply goes straight back to the customer, not to our own inbox. */
   return send({ to, subject, text, html, link: "", replyTo: enquiry.email || "" });
+}
+
+/* Confirmation to the customer that their project enquiry reached the business.
+   Sent to the address they typed on the form, so they know it arrived even when
+   they close the page. Replies go back to the business inbox via MAIL_REPLY_TO. */
+export function sendProjectEnquiryAcknowledgementEmail(enquiry, to) {
+  const escapeAck = (value) =>
+    String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const reference = `SBD-${String(enquiry.id).slice(0, 8).toUpperCase()}`;
+  const greeting = enquiry.full_name ? `Hello ${enquiry.full_name},` : "Hello,";
+  const price = `USD ${Number(enquiry.starting_price_amount || 0).toLocaleString("en-US")}`;
+  const subject = `We received your enquiry — ${reference}`;
+
+  const text = [
+    greeting,
+    "",
+    "Thank you for contacting SBD AI Solutions. Your project enquiry has been received and the team will reply to you at this email address with a quotation.",
+    "",
+    `Reference: ${reference}`,
+    `Service: ${enquiry.serviceName || enquiry.service}`,
+    `Starting price shown: ${price}`,
+    "",
+    "This is not a final quotation and no payment has been taken. SBD reviews your requirements first, then sends a written quote before any payment is requested.",
+    "",
+    enquiry.description ? `Your project description:\n${enquiry.description}` : "",
+    "",
+    "If you need to add anything, simply reply to this email.",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;color:#0b1220">
+      <h2 style="color:#0b1f3f;margin-bottom:4px">Enquiry received</h2>
+      <p style="color:#5b6675;margin-top:0">${escapeAck(reference)}</p>
+      <p>${escapeAck(greeting)}</p>
+      <p>Thank you for contacting <strong>SBD AI Solutions</strong>. Your project enquiry has been received and the team will reply to you at this email address with a quotation.</p>
+      <table style="width:100%;border-collapse:collapse;margin:18px 0">
+        <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Reference</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escapeAck(reference)}</td></tr>
+        <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Service</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeAck(enquiry.serviceName || enquiry.service)}</td></tr>
+        <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Starting price shown</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeAck(price)}</td></tr>
+      </table>
+      <p style="font-size:13px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
+        This is not a final quotation and no payment has been taken. SBD reviews your requirements first, then sends a written quote before any payment is requested.
+      </p>
+      <p style="font-size:13px;color:#5b6675">If you need to add anything, simply reply to this email.</p>
+    </div>`;
+
+  return send({ to, subject, text, html, link: "" });
 }
 
 const escapeHtml = (value) =>

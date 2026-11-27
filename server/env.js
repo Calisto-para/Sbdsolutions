@@ -18,7 +18,7 @@ const appUrl = publicAppUrl || configuredAppUrl || "http://localhost:3001";
 /* Comma-separated addresses that are promoted to the operator role. */
 const adminEmails = [...(process.env.ADMIN_EMAILS || "").split(","), process.env.ADMIN_EMAIL || ""]
   .map((value) => value.trim().toLowerCase())
-  .filter(Boolean);
+  .filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
 
 const DEV_SESSION_SECRET = "dev-only-insecure-session-secret";
 const configuredSessionSecret = process.env.SESSION_SECRET || "";
@@ -36,7 +36,10 @@ const projectEnquiryEmails = [
   ...(process.env.MAIL_REPLY_TO || "").split(","),
   ...adminEmails,
 ]
-  .map((value) => value.trim().toLowerCase())
+  /* Only real addresses: a display-name form such as `Support <a@b.com>` or a
+     stray word would otherwise become an invalid recipient and the provider
+     would reject the entire notification. */
+  .map((value) => (String(value).match(/[^\s,;<>"']+@[^\s,;<>"']+\.[^\s,;<>"']+/) || [""])[0].toLowerCase())
   .filter(Boolean)
   .filter((value, index, list) => list.indexOf(value) === index);
 

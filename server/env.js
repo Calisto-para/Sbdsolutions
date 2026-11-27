@@ -88,8 +88,12 @@ export const env = {
   projectEnquiryEmail:
     (process.env.PROJECT_ENQUIRY_EMAIL || process.env.MAIL_REPLY_TO || "sbdiam.solutions@gmail.com").trim(),
   mail: {
-    /* brevo | resend | smtp. Empty means: first configured provider wins. */
-    provider: (process.env.EMAIL_PROVIDER || "").trim().toLowerCase(),
+    /* brevo | resend | smtp. Empty means: first configured provider wins.
+       "bravo" is a common spelling of Brevo and is treated as the same
+       provider, as is the BRAVO_API_KEY variable below. */
+    provider: ((process.env.EMAIL_PROVIDER || "").trim().toLowerCase() === "bravo"
+      ? "brevo"
+      : (process.env.EMAIL_PROVIDER || "").trim().toLowerCase()),
     from: process.env.MAIL_FROM || "SBD AI Solutions <sbdiam.solutions@gmail.com>",
     replyTo: process.env.MAIL_REPLY_TO || "",
     brevo: {

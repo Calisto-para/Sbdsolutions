@@ -237,7 +237,9 @@ router.post("/", requireAuth, async (req, res, next) => {
       onlineError,
       message: authorizationUrl
         ? `Invoice ${payment.reference} created. Pay ${formatMoney(quote.localAmount, quote.currency)} (USD ${customerAmount.toFixed(2)}) to activate the ${plan.name} plan — online payments are confirmed instantly.`
-        : `Invoice ${payment.reference} created. Pay ${formatMoney(quote.localAmount, quote.currency)} (USD ${customerAmount.toFixed(2)}) by bank transfer and submit your reference; the SBD team verifies it and your plan activates.`,
+        : paymentConfig().bank
+          ? `Invoice ${payment.reference} created. Pay ${formatMoney(quote.localAmount, quote.currency)} (USD ${customerAmount.toFixed(2)}) by bank transfer and submit your reference; the SBD team verifies it and your plan activates.`
+          : `Invoice ${payment.reference} created, but the online payment page could not be opened${onlineError ? ` (${onlineError})` : ""}. Message us on WhatsApp (+234 906 392 4288) and we will take your payment and activate the plan.`,
       ...(await subscriptionSummary(req.user.id)),
     });
   } catch (error) {

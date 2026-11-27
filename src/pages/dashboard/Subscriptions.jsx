@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import {
   COUNTRIES,
@@ -64,11 +64,23 @@ export default function Subscriptions() {
     }
   }
 
-  /* Returning from the payment page: confirm the payment straight away. */
+  /* Returning from the payment page: confirm the payment straight away, once,
+     and drop the provider's parameters from the address bar. */
+  const returnedPayment = useRef("");
   useEffect(() => {
     if (!data) return;
-    const id = new URLSearchParams(window.location.search).get("payment");
-    if (id) verify(id);
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("payment");
+    if (!id || returnedPayment.current === id) return;
+    returnedPayment.current = id;
+    for (const key of ["payment", "status", "tx_ref", "transaction_id"]) params.delete(key);
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    );
+    verify(id);
   }, [data?.planId]);
 
   async function change(planId, nextCountry = country) {
@@ -81,6 +93,12 @@ export default function Subscriptions() {
       setReference("");
       setNotice(next.message);
       await load();
+      /* Go straight to the provider's checkout — choosing a plan is the intent
+         to pay, not just to create a record. */
+      if (next.authorizationUrl) {
+        window.location.assign(next.authorizationUrl);
+        return;
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -322,7 +340,8 @@ export default function Subscriptions() {
 
           {checkout.onlineError ? (
             <div className="form-alert form-alert--error">
-              The online payment page could not be opened ({checkout.onlineError}). Use the bank transfer details below.
+              The online payment page could not be opened ({checkout.onlineError}).
+              {bank ? " Use the bank transfer details below." : " Please try again, or message us on WhatsApp (+234 906 392 4288)."}
             </div>
           ) : null}
 
@@ -446,7 +465,9 @@ export default function Subscriptions() {
                     {current
                       ? "Current plan"
                       : busy === plan.id
-                        ? "Opening invoice…"
+                        ? online
+                          ? "Opening payment…"
+                          : "Opening invoice…"
                         : plan.price > (data.plan?.price || 0)
                           ? "Upgrade"
                           : "Choose plan"}

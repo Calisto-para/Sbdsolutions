@@ -212,7 +212,9 @@
   form.appendChild(input);
   form.appendChild(send);
 
-  var details = el("div", "sbdw-details");
+  /* A real form: the browser only fires submit on <form>, so the panel being a
+     div meant "Send my details" silently did nothing. */
+  var details = el("form", "sbdw-details");
   var dName = el("input");
   dName.placeholder = "Your name";
   var dEmail = el("input");

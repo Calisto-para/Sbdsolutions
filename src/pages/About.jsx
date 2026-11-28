@@ -7,8 +7,8 @@ export default function About() {
     <div className="container page-hero-grid">
       <div>
         <nav className="breadcrumb" aria-label="Breadcrumb"><Link to="/">Home</Link><i>/</i><span>About Us</span></nav>
-        <h1>About <span>SBD AI Solutions</span></h1>
-        <p className="lead">SBD AI Solutions is a technology company focused on helping businesses operate smarter through artificial intelligence, automation and custom software development.</p>
+        <h1>About <span>SBD Solutions</span></h1>
+        <p className="lead">SBD Solutions is a technology company focused on helping businesses operate smarter through artificial intelligence, automation and custom software development.</p>
       </div>
       <aside className="page-tag">
         <strong>Our purpose</strong>

@@ -34,8 +34,83 @@ export default function Overview({ onNavigate }) {
   const creditsLow = !creditsExhausted && creditPercent >= 80;
   const formatCredits = (value) => Number(value || 0).toLocaleString("en-GB", { maximumFractionDigits: 1 });
 
+  const setupSteps = [
+    {
+      key: "plan",
+      title: "Activate your plan",
+      text: "Pick the plan that matches your traffic. Nothing is charged until payment is verified.",
+      done: Boolean(limits.planActive),
+      tab: "subscriptions",
+      cta: limits.planActive ? "Manage plan" : "Choose a plan",
+    },
+    {
+      key: "assistant",
+      title: "Create an AI assistant",
+      text: "Give it a name and the business details customers ask about.",
+      done: data.stats.assistants > 0,
+      tab: "assistants",
+      cta: data.stats.assistants > 0 ? "Open assistants" : "Create assistant",
+    },
+    {
+      key: "knowledge",
+      title: "Add your business knowledge",
+      text: "Services, prices, FAQs and documents — what the assistant is allowed to answer from.",
+      done: data.stats.knowledgeItems > 0,
+      tab: "knowledge",
+      cta: data.stats.knowledgeItems > 0 ? "Review knowledge" : "Add knowledge",
+    },
+    {
+      key: "conversation",
+      title: "Install the widget and test it",
+      text: "Copy the install script from Website Chatbot, then send the first test message.",
+      done: data.stats.conversations > 0,
+      tab: "chatbot",
+      cta: data.stats.conversations > 0 ? "Open website chatbot" : "Get the script",
+    },
+  ];
+  const setupDone = setupSteps.filter((step) => step.done).length;
+  const setupPercent = Math.round((setupDone / setupSteps.length) * 100);
+  const nextStep = setupSteps.find((step) => !step.done);
+
   return (
     <div className="dash-stack">
+      {setupDone < setupSteps.length ? (
+        <section className="panel onboard" aria-labelledby="onboard-title">
+          <div className="onboard-head">
+            <div>
+              <h2 id="onboard-title">Finish setting up</h2>
+              <p>
+                {setupDone} of {setupSteps.length} steps complete. Each step uses real account data, so this list
+                disappears once everything is working.
+              </p>
+            </div>
+            <span className="onboard-count">{setupPercent}%</span>
+          </div>
+          <div className="onboard-bar" role="presentation">
+            <span style={{ width: `${setupPercent}%` }} />
+          </div>
+          <ol className="onboard-steps">
+            {setupSteps.map((step) => (
+              <li key={step.key} className={step.done ? "is-done" : undefined}>
+                <span className="onboard-check" aria-hidden="true">
+                  {step.done ? "✓" : ""}
+                </span>
+                <div className="onboard-copy">
+                  <strong>{step.title}</strong>
+                  <p>{step.text}</p>
+                </div>
+                <button
+                  type="button"
+                  className={`btn btn--sm ${nextStep?.key === step.key ? "btn--primary" : "btn--outline"}`}
+                  onClick={() => onNavigate({ tab: step.tab })}
+                >
+                  {step.cta}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
       <section className="panel">
         <div className="panel-head panel-head--row">
           <div>

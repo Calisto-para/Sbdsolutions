@@ -26,7 +26,7 @@ export default function AdminSignIn() {
     <div className="admin-gate">
       <form className="admin-gate-card auth-form" onSubmit={submit}>
         <h1>Sign in</h1>
-        <p className="panel-note">Use your SBD AI Solutions account.</p>
+        <p className="panel-note">Use your SBD Solutions account.</p>
 
         {error ? <div className="form-alert form-alert--error">{error}</div> : null}
 

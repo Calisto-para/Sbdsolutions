@@ -66,6 +66,8 @@ router.get("/", requireAuth, async (req, res, next) => {
         creditRemaining: creditLimit == null ? null : Math.max(0, creditLimit - creditsUsed),
         creditPercent: creditLimit ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : null,
         creditsExhausted: creditLimit != null && creditsUsed >= creditLimit,
+        planActive: planInfo.subscription?.status === "active",
+        renewalDate: planInfo.subscription?.current_period_end || null,
       },
       stats: {
         assistants: stats.assistants,

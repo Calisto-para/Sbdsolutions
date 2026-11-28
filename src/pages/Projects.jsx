@@ -8,7 +8,7 @@ export default function Projects() {
       <div>
         <nav className="breadcrumb" aria-label="Breadcrumb"><Link to="/">Home</Link><i>/</i><span>Projects</span></nav>
         <h1>Technology That Turns Ideas Into <span>Solutions.</span></h1>
-        <p className="lead">Explore our technology projects, digital solutions and software development work. At SBD AI Solutions, we focus on building practical solutions that help businesses improve operations, simplify processes and embrace smarter technology.</p>
+        <p className="lead">Explore our technology projects, digital solutions and software development work. At SBD Solutions, we focus on building practical solutions that help businesses improve operations, simplify processes and embrace smarter technology.</p>
         <div className="btn-row">
           <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
           <Link className="btn btn--outline" to="/services">Explore services</Link>
@@ -97,7 +97,7 @@ export default function Projects() {
         <div className="reveal">
           <p className="eyebrow">Delivery standards</p>
           <h2 className="section-title">The non-negotiables on every <span>build.</span></h2>
-          <p className="lead" style={{ marginTop: "20px" }}>These are not upgrades. They are the baseline standard for anything delivered under the SBD AI Solutions name.</p>
+          <p className="lead" style={{ marginTop: "20px" }}>These are not upgrades. They are the baseline standard for anything delivered under the SBD Solutions name.</p>
         </div>
         <div className="reveal">
           <ul className="check-list">

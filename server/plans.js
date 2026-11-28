@@ -49,13 +49,29 @@ export async function resetCreditUsage(userId) {
   );
 }
 
+/* The effective monthly allowance is the plan's credits plus any extra credits
+   the customer bought. Purchased credits are tracked separately
+   (subscriptions.bonus_credits), never folded into the plan figure, and a
+   renewal resets only the plan part. */
+export function totalCreditAllowance(plan, subscription) {
+  if (!plan) return null;
+  const bonus = Math.max(0, Number(subscription?.bonus_credits || 0));
+  /* Only a plan explicitly marked unlimited may skip the credit gate. A
+     custom plan without a stated allowance gets zero credits, never an
+     implicit unlimited balance. */
+  if (plan.unlimited_credits) return null;
+  if (plan.custom) return Math.max(0, Number(plan.credit_limit || 0)) + bonus;
+  if (!plan.credit_limit || plan.credit_limit <= 0) return null;
+  return Number(plan.credit_limit) + bonus;
+}
+
 export async function checkCreditLimit(userId) {
-  const { plan } = await currentPlan(userId);
-  const sub = await one("select * from subscriptions where user_id = $1", [userId]);
-  if (!plan || !sub) return "";
-  if (!plan.credit_limit || plan.credit_limit <= 0) return ""; /* enterprise: no limit */
-  if ((sub.credits_used || 0) >= plan.credit_limit) {
-    return `Your ${plan.credit_limit.toLocaleString("en-GB")}-credit SBD AI allowance on the ${plan.name} plan is used up for this month. Renew or upgrade to keep using AI features.`;
+  const { subscription, plan } = await currentPlan(userId);
+  if (!plan || !subscription) return "";
+  const allowance = totalCreditAllowance(plan, subscription);
+  if (allowance == null) return ""; /* enterprise: no limit */
+  if (Number(subscription.credits_used || 0) >= allowance) {
+    return `You have reached your monthly AI credit limit (${allowance.toLocaleString("en-GB")} credits on the ${plan.name} plan). Upgrade your subscription or purchase additional credits to continue.`;
   }
   return "";
 }
@@ -168,12 +184,15 @@ export async function chargeAiUsage(userId, dollars) {
   const credits = creditsFor(dollars);
   return one(
     `update subscriptions s
-        set credits_used = least(coalesce(p.credit_limit, 1e18), coalesce(s.credits_used, 0) + $2::numeric),
+        set credits_used = least(
+              coalesce(p.credit_limit, 1e18) + greatest(0, coalesce(s.bonus_credits, 0)),
+              coalesce(s.credits_used, 0) + $2::numeric
+            ),
             spending_used = least(coalesce(p.underlying_cost, 1e18), coalesce(s.spending_used, 0) + $3::numeric),
             updated_at = now()
        from plans p
       where s.user_id = $1 and p.id = s.plan_id
-      returning s.credits_used, s.spending_used,
+      returning s.credits_used, s.spending_used, s.bonus_credits,
                 p.credit_limit, p.underlying_cost, p.custom`,
     [userId, credits, dollars]
   );
@@ -269,9 +288,23 @@ export async function currentPlan(userId) {
   );
   const subscription =
     row || (await one("select * from subscriptions where user_id = $1", [userId]));
-  const plan = await one("select * from plans where id = $1", [subscription.plan_id]);
+  const storedPlan = await one("select * from plans where id = $1", [subscription.plan_id]);
   const fallback = await one("select * from plans where id = $1", [DEFAULT_PLAN]);
-  return { subscription, plan: plan || fallback };
+
+  /* A custom plan is only in force while the subscription is active and its
+     paid period has not ended. Once it expires or is cancelled, every caller
+     of currentPlan() sees the standard fallback plan, so no allowance can leak
+     past the paid period. The stored custom plan is kept for history. */
+  const customActive = Boolean(
+    storedPlan?.custom &&
+      storedPlan.custom_request_id &&
+      (subscription.status === "active" || subscription.status === "canceled") &&
+      new Date(subscription.current_period_end) > new Date()
+  );
+  const plan = storedPlan?.custom && storedPlan.custom_request_id && !customActive
+    ? fallback
+    : storedPlan || fallback;
+  return { subscription, plan, storedPlan, customActive };
 }
 
 export async function usageFor(userId) {
@@ -310,6 +343,10 @@ export async function usageFor(userId) {
 export function assistantLimitFor(plan, subscription) {
   if (!plan) return 0;
   if (plan.custom) {
+    /* A custom plan carries its own allowance; Enterprise (no plan limit) uses
+       the allowance an operator assigned to the account. */
+    const own = Math.max(0, Number(plan.assistant_limit || 0));
+    if (own > 0) return own;
     const assigned = subscription?.agent_allowance;
     return assigned == null ? 0 : Math.max(0, Number(assigned));
   }
@@ -345,7 +382,7 @@ const shape = (plan) =>
         assistantLimit: plan.assistant_limit,
         messageLimit: plan.message_limit,
         tokenLimit: plan.token_limit ?? 0,
-        creditLimit: plan.custom ? null : Number(plan.credit_limit || 0),
+        creditLimit: plan.unlimited_credits ? null : Number(plan.credit_limit || 0),
         features: Array.isArray(plan.features) ? plan.features : [],
         custom: Boolean(plan.custom),
         billingNote: plan.billing_note || "",
@@ -361,7 +398,10 @@ export async function subscriptionSummary(userId) {
     subscription.status === "active" ||
     (subscription.status === "canceled" && new Date(subscription.current_period_end) > new Date());
   return {
-    planId: subscription.plan_id,
+    planId: plan?.id || subscription.plan_id,
+    storedPlanId: subscription.plan_id,
+    customActive: Boolean(plan?.custom && plan.custom_request_id),
+    customExpiresAt: plan?.custom ? subscription.current_period_end : null,
     plan: shape(plan),
     status: subscription.status,
     active,
@@ -378,15 +418,24 @@ export async function subscriptionSummary(userId) {
       agentAllowance: subscription.agent_allowance ?? null,
       agentRemaining: Math.max(0, assistantLimitFor(plan, subscription) - usage.assistants),
       canCreateAgent: usage.assistants < assistantLimitFor(plan, subscription),
-      planCustom: Boolean(plan?.custom),
+      planCustom: Boolean(plan?.custom && plan.custom_request_id),
       customerLimit: plan?.message_limit ?? 50,
       messageLimit: plan?.message_limit ?? 50,
       tokensUsed: subscription.tokens_used ?? 0,
       tokenLimit: plan?.token_limit ?? 0,
       creditsUsed: subscription.credits_used ?? 0,
-      creditLimit: plan?.credit_limit && !plan?.custom ? Number(plan.credit_limit) : null,
+      /* extra credits bought on top of the plan, kept separate on purpose */
+      bonusCredits: Number(subscription.bonus_credits || 0),
+      planCredits: plan?.credit_limit != null && !plan?.unlimited_credits ? Number(plan.credit_limit) : null,
+      creditLimit: totalCreditAllowance(plan, subscription),
+      creditsRemaining: (() => {
+        const allowance = totalCreditAllowance(plan, subscription);
+        if (allowance == null) return null;
+        return Math.max(0, allowance - Number(subscription.credits_used || 0));
+      })(),
       spendingUsed: subscription.spending_used ?? 0,
       spendingLimit: (!plan?.custom && Number(plan.underlying_cost || 0)) || null,
+      customRequestId: plan?.custom_request_id || null,
     },
   };
 }

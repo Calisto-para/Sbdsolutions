@@ -1,4 +1,4 @@
-# SBD AI Solutions — website and customer platform
+# SBD Solutions — website and customer platform
 
 The public marketing site plus the customer platform: accounts, a private
 dashboard, AI assistant creation, training and testing. React 19 + Vite on the

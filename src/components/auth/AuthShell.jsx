@@ -5,12 +5,14 @@ export default function AuthShell({ title, intro, children, footer }) {
     <section className="auth-page">
       <div className="container auth-grid">
         <aside className="auth-aside">
-          <Link className="brand brand--stacked" to="/" aria-label="SBD AI Solutions home">
-            <img className="brand-mark brand-tile" src="/sbd-ai-solutions-icon.png" alt="" width="54" height="54" />
-            <span className="brand-text">
-              <span className="brand-name">SBD AI Solutions</span>
-              <span className="brand-tag">Intelligent Technology. Smarter Business.</span>
-            </span>
+          <Link className="brand brand--stacked" to="/" aria-label="SBD Solutions home">
+            <img
+              className="brand-logo brand-logo--light"
+              src="/brand/sbd-solutions-logo-light.png"
+              alt="SBD Solutions"
+              width="205"
+              height="52"
+            />
           </Link>
           <h2>Your AI assistant, built on what your business already knows.</h2>
           <ul className="auth-points">

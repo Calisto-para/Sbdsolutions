@@ -6,7 +6,8 @@ const NAV_LINKS = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About Us" },
   { to: "/services", label: "Services" },
-  { to: "/register", label: "AI Platform" },
+  { to: "/products", label: "Products" },
+  { to: "/register", label: "Platform" },
   { to: "/pricing", label: "Pricing" },
   { to: "/projects", label: "Projects" },
   { to: "/contact", label: "Contact" },
@@ -60,12 +61,12 @@ export default function Header() {
   return (
     <header className={`site-header${navOpen ? " nav-open" : ""}`} ref={headerRef}>
       <div className="header-inner">
-        <Link className="brand" to="/" aria-label="SBD AI Solutions home">
+        <Link className="brand" to="/" aria-label="SBD Solutions home">
           <img
             className="brand-logo"
-            src="/assets/sbd-ai-solutions-logo.png"
-            alt="SBD AI Solutions — Intelligent Technology. Smarter Business."
-            width="201"
+            src="/brand/sbd-solutions-logo.png"
+            alt="SBD Solutions — Intelligent Technology. Smarter Business."
+            width="205"
             height="52"
           />
         </Link>

@@ -132,8 +132,8 @@ export const SERVICES = [
       "Testing and deployment assistance",
     ],
     excludes: [
-      "WhatsApp Business API and Meta conversation charges",
-      "Business solution provider subscription fees",
+      "Meta Business verification and a dedicated phone number",
+      "Usage above the subscribed plan allowance (quoted and approved first)",
     ],
   },
   {

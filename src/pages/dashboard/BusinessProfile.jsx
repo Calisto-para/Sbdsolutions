@@ -56,7 +56,7 @@ export default function BusinessProfile() {
         <div className="form-grid">
           <div className="field">
             <label htmlFor="bizName">Business name</label>
-            <input id="bizName" value={form.name} onChange={update("name")} placeholder="SBD AI Solutions" />
+            <input id="bizName" value={form.name} onChange={update("name")} placeholder="SBD Solutions" />
           </div>
           <div className="field">
             <label htmlFor="bizIndustry">Industry</label>

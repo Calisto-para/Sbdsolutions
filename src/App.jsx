@@ -5,6 +5,7 @@ import RouteMeta from "./components/RouteMeta";
 import Home from "./pages/Home";
 import Services from "./pages/Services";
 import Pricing from "./pages/Pricing";
+import Products from "./pages/Products";
 import Projects from "./pages/Projects";
 import About from "./pages/About";
 import Clients from "./pages/Clients";
@@ -61,6 +62,7 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="services" element={<Services />} />
           <Route path="pricing" element={<Pricing />} />
+          <Route path="products" element={<Products />} />
           <Route path="projects" element={<Projects />} />
           <Route path="about" element={<About />} />
           <Route path="who-we-help" element={<Clients />} />

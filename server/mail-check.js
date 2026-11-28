@@ -242,7 +242,7 @@ export async function mailDiagnostics() {
   const failing = result.checks.find((check) => !check.ok && check.verifiedDomains?.length);
   if (!result.ok && failing) {
     const suggestion = failing.verifiedDomains[0];
-    result.hint = `Set MAIL_FROM to "SBD AI Solutions <${suggestion}>" in the service environment (or verify ${result.sender} in ${failing.provider}), then restart. Currently it sends from ${result.sender}.`;
+    result.hint = `Set MAIL_FROM to "SBD Solutions <${suggestion}>" in the service environment (or verify ${result.sender} in ${failing.provider}), then restart. Currently it sends from ${result.sender}.`;
   } else if (!result.ok && providers.includes("resend") && isFreeMailbox()) {
     result.hint = "Resend cannot verify a free mailbox domain such as Gmail. Either verify a domain you own at resend.com/domains, or set BREVO_API_KEY and verify this mailbox as a sender in Brevo.";
   }

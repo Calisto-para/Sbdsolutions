@@ -19,7 +19,7 @@ const detectedCountry = () => {
 
 const WHATSAPP =
   "https://wa.me/2349063924288?text=" +
-  encodeURIComponent("Hello SBD AI Solutions, I would like to set up the Enterprise plan.");
+  encodeURIComponent("Hello SBD Solutions, I would like to set up the Enterprise plan.");
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -566,7 +566,14 @@ export default function Subscriptions() {
                         {payment.status}
                       </span>
                     </td>
-                    <td>{payment.rejectedReason || payment.note || payment.description}</td>
+                    <td>
+                      {payment.rejectedReason || payment.note || payment.description}
+                      <span className="panel-note">
+                        <a href={`/api/subscriptions/payments/${payment.id}/receipt`} target="_blank" rel="noreferrer">
+                          View receipt
+                        </a>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

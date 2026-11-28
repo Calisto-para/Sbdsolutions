@@ -206,7 +206,7 @@ function BusinessInformation({ business, setData, setError, setNotice, onPreview
       </div>
 
       <div className="form-grid">
-        {field("name", "Business name", "SBD AI Solutions", { max: 160 })}
+        {field("name", "Business name", "SBD Solutions", { max: 160 })}
         {field("industry", "Industry or category", "Technology", { max: 120 })}
         {field("website", "Website", "https://example.com", { type: "url" })}
         {field("supportEmail", "Business email", "hello@example.com", { type: "email" })}

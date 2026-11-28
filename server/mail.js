@@ -3,15 +3,15 @@ import { env } from "./env.js";
 
 const REQUEST_TIMEOUT_MS = 15000;
 
-/* MAIL_FROM looks like `SBD AI Solutions <hello@example.com>`. Brevo needs the
+/* MAIL_FROM looks like `SBD Solutions <hello@example.com>`. Brevo needs the
    name and address separately; Resend and SMTP take the whole string back. */
 function parseFrom(value) {
   const raw = String(value || "").trim();
   const match = raw.match(/^(.*?)\s*<([^>]+)>$/);
   if (!match) {
-    return { name: "SBD AI Solutions", email: raw, formatted: raw };
+    return { name: "SBD Solutions", email: raw, formatted: raw };
   }
-  const name = match[1].replace(/^"|"$/g, "").trim() || "SBD AI Solutions";
+  const name = match[1].replace(/^"|"$/g, "").trim() || "SBD Solutions";
   const email = match[2].trim();
   return { name, email, formatted: `${name} <${email}>` };
 }
@@ -206,8 +206,8 @@ async function send({ to, subject, text, html, link, replyTo }) {
 
 /* Used by the operator dashboard to prove the sending account works. */
 export async function sendTestEmail(to) {
-  const subject = "SBD AI Solutions test email";
-  const text = "This is a test message from the SBD AI Solutions platform. If you can read it, verification and password-reset email will reach customers too.";
+  const subject = "SBD Solutions test email";
+  const text = "This is a test message from the SBD Solutions platform. If you can read it, verification and password-reset email will reach customers too.";
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#0b1220"><h2 style="color:#0b1f3f">Test email</h2><p>${text}</p></div>`;
   return send({ to, subject, text, html, link: "" });
 }
@@ -298,7 +298,7 @@ export function sendProjectEnquiryAcknowledgementEmail(enquiry, to) {
   const text = [
     greeting,
     "",
-    "Thank you for contacting SBD AI Solutions. Your project enquiry has been received and the team will reply to you at this email address with a quotation.",
+    "Thank you for contacting SBD Solutions. Your project enquiry has been received and the team will reply to you at this email address with a quotation.",
     "",
     `Reference: ${reference}`,
     `Service: ${enquiry.serviceName || enquiry.service}`,
@@ -318,7 +318,7 @@ export function sendProjectEnquiryAcknowledgementEmail(enquiry, to) {
       <h2 style="color:#0b1f3f;margin-bottom:4px">Enquiry received</h2>
       <p style="color:#5b6675;margin-top:0">${escapeAck(reference)}</p>
       <p>${escapeAck(greeting)}</p>
-      <p>Thank you for contacting <strong>SBD AI Solutions</strong>. Your project enquiry has been received and the team will reply to you at this email address with a quotation.</p>
+      <p>Thank you for contacting <strong>SBD Solutions</strong>. Your project enquiry has been received and the team will reply to you at this email address with a quotation.</p>
       <table style="width:100%;border-collapse:collapse;margin:18px 0">
         <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Reference</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;font-weight:600">${escapeAck(reference)}</td></tr>
         <tr><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5;color:#5b6675">Service</td><td style="padding:7px 10px;border-bottom:1px solid #e6ecf5">${escapeAck(enquiry.serviceName || enquiry.service)}</td></tr>
@@ -487,11 +487,11 @@ export function sendChatLeadAcknowledgementEmail({ lead, assistantName, business
 }
 
 export function sendVerificationEmail(user, link) {
-  const subject = "Verify your SBD AI Solutions account";
+  const subject = "Verify your SBD Solutions account";
   const text = [
     `Hello ${user.full_name},`,
     "",
-    "Confirm your email address to finish setting up your SBD AI Solutions account.",
+    "Confirm your email address to finish setting up your SBD Solutions account.",
     "",
     link,
     "",
@@ -501,7 +501,7 @@ export function sendVerificationEmail(user, link) {
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;color:#0b1220">
       <h2 style="color:#0b1f3f">Verify your email</h2>
       <p>Hello ${user.full_name},</p>
-      <p>Confirm your email address to finish setting up your SBD AI Solutions account.</p>
+      <p>Confirm your email address to finish setting up your SBD Solutions account.</p>
       <p><a href="${link}" style="display:inline-block;background:#1f5bea;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Verify email</a></p>
       <p style="font-size:13px;color:#5b6675">This link expires in 24 hours. If you did not create an account, you can ignore this email.</p>
     </div>`;
@@ -509,7 +509,7 @@ export function sendVerificationEmail(user, link) {
 }
 
 export function sendPasswordResetEmail(user, link) {
-  const subject = "Reset your SBD AI Solutions password";
+  const subject = "Reset your SBD Solutions password";
   const text = [
     `Hello ${user.full_name},`,
     "",
@@ -528,4 +528,40 @@ export function sendPasswordResetEmail(user, link) {
       <p style="font-size:13px;color:#5b6675">If you did not ask for this, you can ignore this email.</p>
     </div>`;
   return send({ to: user.email, subject, text, html, link });
+}
+
+/* Generic owner notification (support request, unread conversation, usage
+   warning). The body is plain text written by the platform, never raw visitor
+   input, so it is escaped before it becomes HTML. */
+export async function sendNotificationEmail({ title, text, link, businessName }, to) {
+  const brand = businessName ? `${businessName} · SBD Solutions` : "SBD Solutions";
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const textBody = [
+    ...lines,
+    "",
+    link ? `Open it in your dashboard: ${link}` : "",
+    "You are receiving this because email notifications are on for your SBD Solutions account. You can change this in Dashboard → Notifications.",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:620px;color:#0b1220">
+      <p style="color:#5b6675;margin:0 0 4px;font-size:12px;letter-spacing:.04em;text-transform:uppercase">${escapeHtml(brand)}</p>
+      <h2 style="color:#0b1f3f;margin:0 0 12px">${escapeHtml(title)}</h2>
+      ${lines.map((line) => `<p style="line-height:1.6;margin:0 0 8px">${escapeHtml(line)}</p>`).join("")}
+      ${
+        link
+          ? `<p style="margin:20px 0"><a href="${escapeHtml(link)}" style="background:#0b5cff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600">Open in dashboard</a></p>`
+          : ""
+      }
+      <p style="font-size:12px;color:#5b6675;border-top:1px solid #e6ecf5;padding-top:12px">
+        Email notifications are on for your account. Change them in Dashboard → Notifications.
+      </p>
+    </div>`;
+
+  return send({ to, subject: title, text: textBody, html, link: link || "" });
 }

@@ -24,7 +24,8 @@ const router = express.Router();
 
 async function paymentsFor(userId) {
   const rows = await query(
-    `select id, plan_id, amount, currency, base_amount_usd, base_currency, country,
+    `select id, plan_id, target_plan_id, kind, credit_amount, proration, amount, currency,
+            base_amount_usd, base_currency, country,
             payment_currency, local_amount, fx_rate, fx_captured_at, fx_source,
             provider, provider_reference, status, method, description, reference, note,
             rejected_reason, verified_at, created_at
@@ -35,6 +36,51 @@ async function paymentsFor(userId) {
     [userId]
   );
   return rows.map(paymentView);
+}
+
+/* Extra credit packs are configured by an operator. Nothing is purchasable
+   until at least one active pack exists — the platform never invents a price
+   or a quantity. */
+async function activeCreditPackages() {
+  const rows = await query(
+    `select id, name, credits, price, currency, sort_order
+       from credit_packages
+      where active = true
+      order by sort_order asc, credits asc`
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    credits: Number(row.credits),
+    price: Number(row.price),
+    currency: row.currency || "USD",
+  }));
+}
+
+/* Transparent mid-cycle upgrade maths.
+   - the unused part of the current plan is credited back at the daily rate
+   - the difference to the higher plan is charged once
+   - the billing date does not move
+   - consumed usage and purchased credits are never reset */
+export function upgradeQuote({ currentPlan, newPlan, periodEnd, now = new Date() }) {
+  const periodMs = 30 * 24 * 60 * 60 * 1000;
+  const end = new Date(periodEnd || now.getTime() + periodMs);
+  const remainingMs = Math.max(0, Math.min(periodMs, end.getTime() - now.getTime()));
+  const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+  const fraction = remainingMs / periodMs;
+  const round = (value) => Math.round(value * 100) / 100;
+  const unusedValue = round(Number(currentPlan?.price || 0) * fraction);
+  const amountDue = Math.max(0, round(Number(newPlan?.price || 0) - unusedValue));
+  return {
+    fromPlanId: currentPlan?.id || "",
+    toPlanId: newPlan?.id || "",
+    remainingDays,
+    unusedValue,
+    amountDue,
+    periodEnd: end.toISOString(),
+    policy:
+      "You pay only the difference for the days left in this billing period. Your renewal date stays the same, and your used credits and purchased credits are kept.",
+  };
 }
 
 /* Country and currency options, plus when the current rates were captured.
@@ -56,12 +102,15 @@ router.get("/", requireAuth, async (req, res, next) => {
   try {
     const [summary, plans, payments] = await Promise.all([
       subscriptionSummary(req.user.id),
-      query("select * from plans order by sort_order asc"),
+      query("select * from plans where custom = false order by sort_order asc"),
       paymentsFor(req.user.id),
     ]);
 
     res.json({
       ...summary,
+      creditPackages: await activeCreditPackages(),
+      upgradePolicy:
+        "Upgrading charges only the difference for the days left in your current billing period. Your renewal date does not change, and used or purchased credits are kept.",
       plans: plans.map((plan) => ({
         id: plan.id,
         name: plan.name,
@@ -369,6 +418,361 @@ router.post("/cancel", requireAuth, async (req, res, next) => {
         summary.currentPeriodEnd
       ).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}.`,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- upgrades ---------- */
+
+async function paymentCurrencyFor(input) {
+  const country = findCountry(input.country);
+  const currency = input.currency
+    ? input.currency.toUpperCase()
+    : currencyForCountry(country?.code);
+  return { country, currency };
+}
+
+router.get("/upgrade-quote", requireAuth, async (req, res, next) => {
+  try {
+    const planId = z.string().trim().min(2).max(40).parse(String(req.query.planId || ""));
+    const { country, currency } = await paymentCurrencyFor({
+      country: String(req.query.country || ""),
+      currency: String(req.query.currency || ""),
+    });
+    const [{ subscription, plan }, target] = await Promise.all([
+      currentPlan(req.user.id),
+      one("select * from plans where id = $1", [planId]),
+    ]);
+    if (!target) return res.status(404).json({ error: "That plan does not exist." });
+    if (target.custom) {
+      return res.status(400).json({ error: "Enterprise is priced per agreement. Contact us to arrange an upgrade.", code: "CUSTOM_PLAN" });
+    }
+    if (Number(target.price) <= Number(plan?.price || 0)) {
+      return res.status(400).json({ error: "Choose a higher plan to upgrade. Downgrades take effect at renewal.", code: "NOT_AN_UPGRADE" });
+    }
+
+    const quote = upgradeQuote({ currentPlan: plan, newPlan: target, periodEnd: subscription.current_period_end });
+    const fx = await quoteInCurrency(quote.amountDue, currency);
+    res.json({
+      current: { id: plan?.id, name: plan?.name, price: Number(plan?.price || 0) },
+      target: { id: target.id, name: target.name, price: Number(target.price), currency: target.currency },
+      quote,
+      paymentCurrency: fx.currency,
+      localAmount: fx.localAmount,
+      fxRate: fx.rate,
+      country: country?.code || "",
+      credits: {
+        used: Number(subscription.credits_used || 0),
+        allowance: target.credit_limit == null ? null : Number(target.credit_limit),
+      },
+      customers: {
+        used: (await subscriptionSummary(req.user.id)).usage.customers,
+        limit: target.message_limit,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Creates one invoice for the prorated difference. Nothing changes until the
+   payment is verified by the provider or the operator. */
+router.post("/upgrade", requireAuth, async (req, res, next) => {
+  try {
+    const input = z
+      .object({
+        planId: z.string().trim().min(2).max(40),
+        country: z.string().trim().max(2).optional().default(""),
+        currency: z.string().trim().max(3).optional().default(""),
+      })
+      .parse(req.body);
+
+    const { country, currency } = await paymentCurrencyFor(input);
+    const [{ subscription, plan }, target] = await Promise.all([
+      currentPlan(req.user.id),
+      one("select * from plans where id = $1", [input.planId]),
+    ]);
+    if (!target) return res.status(404).json({ error: "That plan does not exist." });
+    if (target.custom) {
+      return res.status(400).json({ error: "Enterprise is priced per agreement. Contact us to arrange an upgrade.", code: "CUSTOM_PLAN" });
+    }
+    if (Number(target.price) <= Number(plan?.price || 0)) {
+      return res.status(400).json({ error: "Choose a higher plan to upgrade. Downgrades take effect at renewal.", code: "NOT_AN_UPGRADE" });
+    }
+    if (!paymentMethodsConfigured()) {
+      return res.status(503).json({
+        error: "Payments are not set up yet. Message us on WhatsApp (+234 906 392 4288) and we will arrange the upgrade.",
+        code: "PAYMENT_NOT_CONFIGURED",
+      });
+    }
+
+    const quote = upgradeQuote({ currentPlan: plan, newPlan: target, periodEnd: subscription.current_period_end });
+    if (!(quote.amountDue > 0)) {
+      return res.status(400).json({ error: "There is nothing to charge for this upgrade. Contact support and we will apply it.", code: "NOTHING_DUE" });
+    }
+    const fx = await quoteInCurrency(quote.amountDue, currency);
+
+    const description = `Upgrade from ${plan?.name || "your plan"} to ${target.name} — prorated for ${quote.remainingDays} day(s) remaining`;
+    const reference = newReference();
+
+    /* One open upgrade invoice per target plan: a double click cannot create
+       two charges. */
+    const open = await one(
+      `select * from payments
+        where user_id = $1 and target_plan_id = $2 and kind = 'upgrade' and status = 'pending'
+        order by created_at desc limit 1`,
+      [req.user.id, target.id]
+    );
+
+    const payment = open
+      ? await one(
+          `update payments
+              set amount = $2, base_amount_usd = $2, currency = 'USD',
+                  country = $3, payment_currency = $4, local_amount = $5,
+                  fx_rate = $6, fx_captured_at = $7, fx_source = $8,
+                  proration = $9::jsonb, description = $10,
+                  reference = case when payment_currency <> $4 or local_amount is distinct from $5 then $11 else reference end
+            where id = $1
+            returning *`,
+          [
+            open.id,
+            quote.amountDue,
+            country?.code || "",
+            fx.currency,
+            fx.localAmount,
+            fx.rate,
+            fx.capturedAt,
+            fx.source,
+            JSON.stringify(quote),
+            description,
+            reference,
+          ]
+        )
+      : await one(
+          `insert into payments
+             (user_id, plan_id, target_plan_id, kind, amount, currency, base_amount_usd,
+              base_currency, country, payment_currency, local_amount, fx_rate, fx_captured_at,
+              fx_source, status, method, description, reference, charged_amount, proration, provider)
+           values ($1, $2, $2, 'upgrade', $3, 'USD', $3, 'USD', $4, $5, $6, $7, $8, $9,
+                   'pending', $10, $11, $12, $3, $13::jsonb, $14)
+           returning *`,
+          [
+            req.user.id,
+            target.id,
+            quote.amountDue,
+            country?.code || "",
+            fx.currency,
+            fx.localAmount,
+            fx.rate,
+            fx.capturedAt,
+            fx.source,
+            onlineEnabled() ? onlineProvider() : "transfer",
+            description,
+            reference,
+            JSON.stringify(quote),
+            onlineEnabled() ? onlineProvider() : "",
+          ]
+        );
+
+    let authorizationUrl = "";
+    let onlineError = "";
+    if (onlineEnabled()) {
+      try {
+        const init = await initializeOnlinePayment({
+          email: req.user.email,
+          payment,
+          plan: target,
+          callbackUrl: `${env.appUrl}/dashboard?tab=usage&payment=${payment.id}`,
+        });
+        authorizationUrl = init.authorizationUrl;
+      } catch (error) {
+        console.error(`[payments] upgrade initialize failed:`, error.message);
+        onlineError = error.message;
+      }
+    }
+
+    res.status(201).json({
+      payment: paymentView(payment),
+      quote,
+      authorizationUrl,
+      onlineError,
+      message: authorizationUrl
+        ? `Upgrade to ${target.name} ready. Pay the prorated difference and it activates instantly once confirmed.`
+        : `Upgrade invoice ${payment.reference} created. It activates once the payment is verified.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- additional credits ---------- */
+
+/* Purchasing stays disabled until an operator has configured a package. */
+router.post("/credits/:packageId/purchase", requireAuth, async (req, res, next) => {
+  try {
+    const input = z
+      .object({
+        country: z.string().trim().max(2).optional().default(""),
+        currency: z.string().trim().max(3).optional().default(""),
+      })
+      .parse(req.body || {});
+
+    const pack = await one("select * from credit_packages where id = $1 and active = true", [
+      req.params.packageId,
+    ]);
+    if (!pack) {
+      return res.status(404).json({
+        error: "That credit pack is not available. Credit purchases open once the SBD team configures them.",
+        code: "PACKAGE_UNAVAILABLE",
+      });
+    }
+    if (!paymentMethodsConfigured()) {
+      return res.status(503).json({
+        error: "Payments are not set up yet. Message us on WhatsApp (+234 906 392 4288) and we will add credits for you.",
+        code: "PAYMENT_NOT_CONFIGURED",
+      });
+    }
+
+    const { country, currency } = await paymentCurrencyFor(input);
+    const { plan } = await currentPlan(req.user.id);
+    const fx = await quoteInCurrency(Number(pack.price), currency);
+    const credits = Number(pack.credits);
+    const description = `${credits.toLocaleString("en-GB")} additional SBD AI credits`;
+    const reference = newReference();
+
+    const open = await one(
+      `select * from payments
+        where user_id = $1 and kind = 'credits' and credit_amount = $2 and status = 'pending'
+        order by created_at desc limit 1`,
+      [req.user.id, credits]
+    );
+
+    const payment = open
+      ? await one(
+          `update payments
+              set amount = $2, base_amount_usd = $2, currency = 'USD', country = $3,
+                  payment_currency = $4, local_amount = $5, fx_rate = $6,
+                  fx_captured_at = $7, fx_source = $8, description = $9,
+                  reference = case when payment_currency <> $4 or local_amount is distinct from $5 then $10 else reference end
+            where id = $1
+            returning *`,
+          [open.id, Number(pack.price), country?.code || "", fx.currency, fx.localAmount, fx.rate, fx.capturedAt, fx.source, description, reference]
+        )
+      : await one(
+          `insert into payments
+             (user_id, plan_id, kind, credit_amount, amount, currency, base_amount_usd,
+              base_currency, country, payment_currency, local_amount, fx_rate, fx_captured_at,
+              fx_source, status, method, description, reference, charged_amount, provider)
+           values ($1, $2, 'credits', $3, $4, 'USD', $4, 'USD', $5, $6, $7, $8, $9, $10,
+                   'pending', $11, $12, $13, $4, $14)
+           returning *`,
+          [
+            req.user.id,
+            plan?.id || "starter",
+            credits,
+            Number(pack.price),
+            country?.code || "",
+            fx.currency,
+            fx.localAmount,
+            fx.rate,
+            fx.capturedAt,
+            fx.source,
+            onlineEnabled() ? onlineProvider() : "transfer",
+            description,
+            reference,
+            onlineEnabled() ? onlineProvider() : "",
+          ]
+        );
+
+    let authorizationUrl = "";
+    let onlineError = "";
+    if (onlineEnabled()) {
+      try {
+        const init = await initializeOnlinePayment({
+          email: req.user.email,
+          payment,
+          plan: { id: plan?.id || "starter", name: description },
+          callbackUrl: `${env.appUrl}/dashboard?tab=usage&payment=${payment.id}`,
+        });
+        authorizationUrl = init.authorizationUrl;
+      } catch (error) {
+        console.error("[payments] credit purchase initialize failed:", error.message);
+        onlineError = error.message;
+      }
+    }
+
+    res.status(201).json({
+      payment: paymentView(payment),
+      credits,
+      price: Number(pack.price),
+      paymentCurrency: fx.currency,
+      localAmount: fx.localAmount,
+      authorizationUrl,
+      onlineError,
+      message: authorizationUrl
+        ? `${credits.toLocaleString("en-GB")} credits ready to buy. They are added the moment the payment is confirmed.`
+        : `Invoice ${payment.reference} created. The credits are added once the payment is verified.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Printable receipt for one payment. Only the owner (or an operator) can read
+   it; it always reflects the stored payment row and any refund on it. */
+router.get("/payments/:id/receipt", async (req, res, next) => {
+  try {
+    const payment = await one(
+      `select p.*, u.full_name, u.email, u.business_name, pl.name as plan_name
+         from payments p
+         join users u on u.id = p.user_id
+         left join plans pl on pl.id = p.plan_id
+        where p.id = $1`,
+      [req.params.id]
+    );
+    if (!payment) return res.status(404).send("Receipt not found.");
+    if (payment.user_id !== req.user.id && req.user.role !== "admin") {
+      return res.status(404).send("Receipt not found.");
+    }
+    const refund = await one("select amount, currency, reason, created_at from refunds where payment_id = $1", [
+      payment.id,
+    ]);
+    const money = (value, currency) =>
+      `${currency || "USD"} ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const esc = (value) =>
+      String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const date = (value) => (value ? new Date(value).toISOString().slice(0, 10) : "—");
+    const status = refund ? "Refunded" : payment.status;
+    const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Receipt ${esc(payment.reference || payment.id)}</title>
+<style>
+ body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;margin:0;padding:40px;background:#f8fafc}
+ .sheet{max-width:720px;margin:0 auto;background:#fff;padding:40px;border:1px solid #e2e8f0;border-radius:12px}
+ h1{font-size:20px;margin:0 0 4px} .muted{color:#64748b;font-size:13px}
+ table{width:100%;border-collapse:collapse;margin-top:24px;font-size:14px}
+ th,td{padding:10px 0;border-bottom:1px solid #e2e8f0;text-align:left}
+ th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+ .total{font-size:18px;font-weight:700} .foot{margin-top:28px;font-size:12px;color:#64748b;line-height:1.6}
+ @media print{body{background:#fff;padding:0}.sheet{border:0}}
+</style></head><body><div class="sheet">
+<h1>SBD Solutions</h1>
+<div class="muted">Receipt ${esc(payment.reference || payment.id)} · issued ${date(payment.created_at)}</div>
+<p><strong>${esc(payment.business_name || payment.full_name)}</strong><br /><span class="muted">${esc(payment.email)}</span></p>
+<table>
+<tr><th>Description</th><th>Date</th><th>Amount</th></tr>
+<tr><td>${esc(payment.plan_name || payment.plan_id)}${payment.kind === "credits" ? " — extra credits" : ""}${payment.kind === "custom" ? " — custom agreement" : ""}</td><td>${date(payment.created_at)}</td><td>${money(payment.amount, payment.currency)}</td></tr>
+${refund ? `<tr><td>Refund — ${esc(refund.reason || "operator refund")}</td><td>${date(refund.created_at)}</td><td>-${money(refund.amount, refund.currency)}</td></tr>` : ""}
+<tr><td class="total">Total ${esc(status === "Refunded" ? "refunded" : "paid")}</td><td></td><td class="total">${money(refund ? Number(payment.amount) - Number(refund.amount) : payment.amount, payment.currency)}</td></tr>
+</table>
+<p class="muted">Status: ${esc(status)}${payment.verified_at ? ` · verified ${date(payment.verified_at)}` : ""}${payment.method ? ` · method ${esc(payment.method)}` : ""}</p>
+<div class="foot">SBD Solutions · support@sbd.solutions<br />
+This receipt reflects the payment record held on your account. Refunds are processed by the original payment method.</div>
+</div></body></html>`;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.send(html);
   } catch (error) {
     next(error);
   }

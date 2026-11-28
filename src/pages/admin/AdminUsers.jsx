@@ -249,6 +249,66 @@ export default function AdminUsers() {
                 )}
               </div>
 
+              <h3 className="admin-subhead">Subscription</h3>
+              {detail.subscription ? (
+                <p className="admin-stat-note">
+                  {detail.subscription.planName || detail.subscription.planId}
+                  {detail.subscription.customPlan ? " (custom agreement)" : ""} · {detail.subscription.status} · renews{" "}
+                  {detail.subscription.currentPeriodEnd ? shortDate(detail.subscription.currentPeriodEnd) : "—"} ·{" "}
+                  {Number(detail.subscription.creditsUsed || 0).toLocaleString()} credits used
+                  {detail.subscription.bonusCredits ? ` · ${Number(detail.subscription.bonusCredits).toLocaleString()} purchased` : ""}
+                  {detail.subscription.creditsAllowance != null ? ` · allowance ${Number(detail.subscription.creditsAllowance).toLocaleString()} credits` : " · unlimited credits"}
+                  {detail.subscription.customerLimit != null ? ` · ${detail.subscription.customerLimit.toLocaleString()} customers` : ""}
+                  {detail.subscription.assistantLimit != null ? ` · ${detail.subscription.assistantLimit} AI agents/websites` : ""}
+                </p>
+              ) : (
+                <p className="admin-stat-note">No subscription record.</p>
+              )}
+
+              <h3 className="admin-subhead">Payments</h3>
+              {detail.payments?.length ? (
+                <table className="admin-table admin-table--compact">
+                  <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {detail.payments.map((payment) => (
+                      <tr key={payment.id}>
+                        <td>{shortDate(payment.createdAt)}</td>
+                        <td>{payment.reference || "—"}</td>
+                        <td>{payment.kind}</td>
+                        <td>{payment.currency} {Number(payment.amount).toFixed(2)}</td>
+                        <td>{payment.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="admin-stat-note">No payments recorded.</p>
+              )}
+
+              <h3 className="admin-subhead">Support tickets</h3>
+              {detail.tickets?.length ? (
+                <table className="admin-table admin-table--compact">
+                  <thead><tr><th>Opened</th><th>Subject</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {detail.tickets.map((ticket) => (
+                      <tr key={ticket.id}>
+                        <td>{shortDate(ticket.createdAt)}</td>
+                        <td>{ticket.subject}</td>
+                        <td>{ticket.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="admin-stat-note">No support tickets.</p>
+              )}
+
+              <h3 className="admin-subhead">Usage</h3>
+              <p className="admin-stat-note">
+                {detail.usage?.conversations ?? 0} conversations · {detail.usage?.leads ?? 0} leads ·{" "}
+                {detail.usage?.knowledgeItems ?? 0} training items
+              </p>
+
               <h3 className="admin-subhead">AI agent allowance</h3>
               <div className="admin-allowance">
                 <div>

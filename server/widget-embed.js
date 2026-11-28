@@ -1,4 +1,4 @@
-/* SBD AI Solutions website chat widget.
+/* SBD Solutions website chat widget.
    Install with one line:
    <script src="https://your-site/widget.js" data-assistant="PUBLIC_KEY" async></script>
    It renders its own markup and styles, so it cannot clash with the host page.
@@ -92,6 +92,10 @@
     history: [],
     busy: false,
     pending: null,
+    streamToken: "",
+    stream: null,
+    offline: false,
+    awaitingHuman: false,
   };
 
   function textColor(hex) {
@@ -145,6 +149,14 @@
     "@keyframes sbdw-typing{0%,80%,100%{transform:translateY(0);opacity:.45}40%{transform:translateY(-4px);opacity:1}}",
     ".sbdw-note{font-size:12px;color:#40506b;align-self:center;text-align:center}",
     ".sbdw-note--team{background:#e8eefc;border-radius:9px;padding:7px 10px;align-self:stretch;text-align:left;color:#0b1f3a;font-weight:600}",
+    ".sbdw-msg--system{align-self:stretch;background:#eef4ff;border:1px dashed #b9cdf0;color:#40506b;font-size:12px;max-width:100%;border-radius:9px;padding:8px 10px}",
+    ".sbdw-offline{display:none;flex-direction:column;gap:8px;padding:10px 12px;border-top:1px solid #e6eefb;background:#fffaf0}",
+    ".sbdw-offline.is-open{display:flex}",
+    ".sbdw-offline strong{font-size:13px;color:#0b1f3a}",
+    ".sbdw-offline span{font-size:12px;color:#5a6c88}",
+    ".sbdw-offline input,.sbdw-offline textarea{border:1px solid #cfdcf3;border-radius:8px;padding:7px 9px;font:inherit;resize:vertical}",
+    ".sbdw-offline button{border:0;border-radius:8px;padding:8px;font:inherit;font-weight:600;cursor:pointer}",
+    ".sbdw-tool--human{border-color:#0b5cff}",
     ".sbdw-retry{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;background:#fff4f2;border:1px solid #f5c9c2;border-radius:9px;padding:8px 10px;align-self:stretch;font-size:12px;color:#8a2c1d}",
     ".sbdw-retry button{border:0;border-radius:7px;padding:5px 10px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;background:#0b5cff;color:#fff}",
     ".sbdw-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e6eefb;background:#fff}",
@@ -194,7 +206,10 @@
   var historyButton = el("button", "sbdw-tool", "Previous chats");
   historyButton.type = "button";
   historyButton.style.display = "none";
+  var humanButton = el("button", "sbdw-tool sbdw-tool--human", "Talk to a Human");
+  humanButton.type = "button";
   tools.appendChild(newChatButton);
+  tools.appendChild(humanButton);
   tools.appendChild(endChatButton);
   tools.appendChild(historyButton);
 
@@ -238,12 +253,32 @@
     details.appendChild(node);
   });
 
+  /* Offline human support: the visitor leaves contact details and a message. */
+  var offlineBox = el("form", "sbdw-offline");
+  var oTitle = el("strong", "", "Our team is currently unavailable.");
+  var oNote = el("span", "", "Please leave your contact details and we will get back to you.");
+  var oName = el("input");
+  oName.placeholder = "Your name";
+  var oEmail = el("input");
+  oEmail.placeholder = "Email address";
+  oEmail.type = "email";
+  var oPhone = el("input");
+  oPhone.placeholder = "Phone number";
+  var oMessage = el("textarea");
+  oMessage.rows = 2;
+  oMessage.placeholder = "How can we help?";
+  var oSend = el("button", "", "Send to the team");
+  oSend.type = "submit";
+  [oTitle, oNote, oName, oEmail, oPhone, oMessage, oSend].forEach(function (node) {
+    offlineBox.appendChild(node);
+  });
+
   var foot = el("div", "sbdw-foot");
   var actions = el("div", "sbdw-actions");
   var detailsLink = el("button", "sbdw-link", "Leave my details");
   detailsLink.type = "button";
   actions.appendChild(detailsLink);
-  var powered = el("span", "", "SBD AI Solutions");
+  var powered = el("span", "", "SBD Solutions");
   foot.appendChild(actions);
   foot.appendChild(powered);
 
@@ -253,6 +288,7 @@
   panel.appendChild(log);
   panel.appendChild(status);
   panel.appendChild(details);
+  panel.appendChild(offlineBox);
   panel.appendChild(form);
   panel.appendChild(foot);
   root.appendChild(panel);
@@ -263,6 +299,7 @@
   }
 
   function kindFor(message) {
+    if (message.author === "system") return "system";
     if (message.author === "team") return "team";
     return message.role === "user" ? "visitor" : "ai";
   }
@@ -294,6 +331,12 @@
   function paintControls() {
     endChatButton.style.display =
       state.conversationId && !isEnded() && !state.viewing ? "inline-flex" : "none";
+    humanButton.style.display =
+      !isEnded() && !state.viewing && !state.awaitingHuman && state.status !== "human_active"
+        ? "inline-flex"
+        : "none";
+    humanButton.disabled = state.busy;
+    offlineBox.className = state.offline ? "sbdw-offline is-open" : "sbdw-offline";
     historyButton.style.display = state.history.length ? "inline-flex" : "none";
     historyButton.textContent = "Previous chats (" + state.history.length + ")";
 
@@ -319,7 +362,10 @@
       messages.forEach(addMessage);
     }
 
-    if (!state.viewing && state.takeover) {
+    if (!state.viewing && state.status === "human_requested" && !state.takeover) {
+      addNote("Waiting for our support team to join…", "sbdw-note");
+    }
+    if (!state.viewing && state.status === "human_active") {
       addNote("A member of our team has joined this chat — replies now come from the team.", "sbdw-note sbdw-note--team");
     }
     if (!state.viewing && isEnded()) {
@@ -444,12 +490,18 @@
           return;
         }
         state.status = data.status || "";
-        state.takeover = Boolean(data.takeover);
+        state.takeover = state.status === "human_active";
+        state.streamToken = data.streamToken || state.streamToken;
         state.messages = data.messages || [];
         /* Persist the adopted conversation under the shared key, so every tab
            and later visits reopen the same chat. */
         if (!readStore(conversationStore)) writeStore(conversationStore, state.conversationId);
-        if (state.status === "resolved") stopPoll();
+        if (state.status === "resolved") {
+          stopPoll();
+          stopStream();
+        } else {
+          startStream();
+        }
         render();
       })
       .catch(function () {});
@@ -497,7 +549,11 @@
     state.pending = null;
     state.busy = false;
     writeStore(conversationStore, "");
+    state.streamToken = "";
+    state.offline = false;
+    state.awaitingHuman = false;
     stopPoll();
+    stopStream();
     setStatus("");
     if (previousEnded && previous) rememberEnded(previous, conversationTitle());
     render();
@@ -515,8 +571,77 @@
     }
   }
 
+  /* Live updates. The signed stream token is issued by the server for this
+     conversation and browser only. Polling remains the fallback. */
+  function stopStream() {
+    if (state.stream) {
+      try {
+        state.stream.close();
+      } catch (error) {
+        /* already closed */
+      }
+      state.stream = null;
+    }
+  }
+
+  function startStream() {
+    if (!state.conversationId || !state.streamToken || state.stream) return;
+    if (typeof window.EventSource !== "function") return;
+    var url =
+      base +
+      "/api/widget/" +
+      key +
+      "/conversation/" +
+      encodeURIComponent(state.conversationId) +
+      "/stream?token=" +
+      encodeURIComponent(state.streamToken);
+    var source;
+    try {
+      source = new window.EventSource(url);
+    } catch (error) {
+      return;
+    }
+    state.stream = source;
+    source.addEventListener("message", function (event) {
+      var payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+      if (!payload || !payload.message) return;
+      if (payload.conversationId && payload.conversationId !== state.conversationId) return;
+      var known = state.messages.some(function (message) {
+        return message.id === payload.message.id;
+      });
+      if (!known) state.messages = state.messages.concat([payload.message]);
+      if (state.status !== "resolved") render();
+    });
+    source.addEventListener("conversation", function (event) {
+      var payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+      if (payload && payload.conversationId === state.conversationId) {
+        state.status = payload.status || state.status;
+        state.takeover = state.status === "human_active";
+        if (state.status === "resolved") {
+          stopStream();
+          stopPoll();
+        }
+        render();
+      }
+    });
+    source.onerror = function () {
+      stopStream();
+      poll();
+    };
+  }
+
   function poll() {
-    if (polling || !state.conversationId) return;
+    if (state.stream || polling || !state.conversationId) return;
     polling = setInterval(function () {
       if (!open || !state.conversationId || isEnded() || state.viewing) return;
       loadConversation();
@@ -579,6 +704,7 @@
         state.status = "resolved";
         rememberEnded(id, conversationTitle());
         stopPoll();
+        stopStream();
         /* The closed chat stays readable in this session and in Previous chats,
            but a reload starts a genuinely new conversation instead of
            reopening a conversation that has ended. */
@@ -717,6 +843,89 @@
         paintControls();
       });
   }
+
+  /* "Talk to a Human": the server changes the status, pauses the AI and
+     notifies the business owner. The visitor keeps the whole transcript. */
+  function ensureConversation() {
+    if (state.conversationId) return Promise.resolve(state.conversationId);
+    return post("/api/widget/" + key + "/conversation", { visitorId: visitorId }).then(
+      function (data) {
+        state.conversationId = data.conversationId;
+        state.streamToken = data.streamToken || "";
+        writeStore(conversationStore, state.conversationId);
+        return state.conversationId;
+      }
+    );
+  }
+
+  humanButton.addEventListener("click", function () {
+    if (state.busy || isLocked()) return;
+    state.busy = true;
+    setStatus("");
+    paintControls();
+    ensureConversation()
+      .then(function (id) {
+        return post("/api/widget/" + key + "/conversation/" + id + "/human", {
+          visitorId: visitorId,
+        });
+      })
+      .then(function (data) {
+        state.conversationId = data.conversationId || state.conversationId;
+        writeStore(conversationStore, state.conversationId);
+        state.status = data.status || "human_requested";
+        state.takeover = state.status === "human_active";
+        state.awaitingHuman = true;
+        state.offline = !data.online;
+        state.streamToken = data.streamToken || state.streamToken;
+        setStatus(state.offline ? data.offlineMessage || "" : data.message || "");
+        render();
+        return loadConversation().then(function () {
+          startStream();
+          loadHistory();
+        });
+      })
+      .catch(function (error) {
+        setStatus(error.message);
+      })
+      .then(function () {
+        state.busy = false;
+        paintControls();
+      });
+  });
+
+  offlineBox.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (state.busy) return;
+    if (!state.conversationId) {
+      setStatus("Please start a chat first.");
+      return;
+    }
+    state.busy = true;
+    setStatus("");
+    paintControls();
+    post("/api/widget/" + key + "/conversation/" + state.conversationId + "/enquiry", {
+      visitorId: visitorId,
+      name: oName.value.trim(),
+      email: oEmail.value.trim(),
+      phone: oPhone.value.trim(),
+      message: oMessage.value.trim(),
+    })
+      .then(function () {
+        state.offline = false;
+        state.awaitingHuman = true;
+        oMessage.value = "";
+        return loadConversation().then(function () {
+          render("Thank you — your details are with the team and we will get back to you.");
+        });
+      })
+      .catch(function (error) {
+        setStatus(error.message);
+      })
+      .then(function () {
+        state.busy = false;
+        paintControls();
+      });
+  });
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();

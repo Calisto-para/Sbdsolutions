@@ -1,4 +1,4 @@
-/* Currencies SBD AI Solutions can actually charge in, and the countries they
+/* Currencies SBD Solutions can actually charge in, and the countries they
    belong to. This is deliberately conservative: it lists only what the payment
    provider supports, so the checkout can never promise a currency the account
    cannot charge. USD is the base pricing currency for everything.

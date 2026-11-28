@@ -1,0 +1,374 @@
+/* ==========================================================================
+   SBD Solutions — site-wide brand layer (2026)
+   Aligns the existing marketing pages with the homepage design language
+   without changing their markup or behaviour. Dashboards load their own
+   stylesheet afterwards.
+   ========================================================================== */
+
+:root {
+  --brand-blue: #1a56f0;
+  --brand-blue-dark: #0d3fc9;
+  --brand-navy: #08182f;
+  --brand-body: #465a76;
+  --brand-line: #e3eaf6;
+  --brand-tint: #f6f9fe;
+  --brand-shadow: 0 18px 44px rgba(11, 30, 60, 0.09);
+}
+
+/* Typography & rhythm ---------------------------------------------------- */
+body {
+  color: var(--brand-body);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: var(--brand-navy);
+}
+
+.section-title span,
+.page-hero h1 span,
+.section-head h2 span {
+  color: var(--brand-blue);
+}
+
+.lead,
+.section-head .lead,
+.pricing-intro {
+  color: var(--brand-body);
+}
+
+.eyebrow {
+  border-color: #d9e5fa;
+  background: #f2f7ff;
+  color: var(--brand-blue);
+  letter-spacing: 0.12em;
+}
+
+.section {
+  padding-top: clamp(56px, 7vw, 96px);
+  padding-bottom: clamp(56px, 7vw, 96px);
+}
+
+.section--surface {
+  background: var(--brand-tint);
+  border-color: var(--brand-line);
+}
+
+/* Page hero -------------------------------------------------------------- */
+.page-hero {
+  position: relative;
+  padding: clamp(44px, 5vw, 72px) 0 clamp(40px, 4.6vw, 64px);
+  background:
+    radial-gradient(760px 420px at 84% -12%, #e6efff 0%, rgba(230, 239, 255, 0) 64%),
+    linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+  border-bottom: 1px solid var(--brand-line);
+  overflow: hidden;
+}
+
+.page-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(26, 86, 240, 0.12) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(540px 360px at 80% 20%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(540px 360px at 80% 20%, #000 0%, transparent 72%);
+  pointer-events: none;
+}
+
+.page-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 32px 48px;
+  align-items: center;
+}
+
+.page-hero h1 {
+  font-size: clamp(2.1rem, 4.2vw, 3.35rem);
+  line-height: 1.08;
+  letter-spacing: -0.032em;
+  font-weight: 800;
+  margin: 14px 0 16px;
+}
+
+.page-hero h1 span {
+  color: var(--brand-blue);
+}
+
+.page-hero .lead {
+  max-width: 56ch;
+  font-size: clamp(0.98rem, 1.2vw, 1.06rem);
+  line-height: 1.7;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: #7b8ea7;
+}
+
+.breadcrumb a {
+  color: #52667f;
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  color: var(--brand-blue);
+}
+
+.breadcrumb i {
+  font-style: normal;
+  color: #b3c3d8;
+}
+
+.page-tag {
+  justify-self: end;
+  width: min(100%, 300px);
+  padding: 24px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #dbe6f7;
+  box-shadow: 0 16px 40px rgba(11, 30, 60, 0.08);
+}
+
+.page-tag strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--brand-blue);
+  line-height: 1.05;
+}
+
+.page-tag p {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #5c7089;
+}
+
+/* Buttons ---------------------------------------------------------------- */
+.btn {
+  border-radius: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+.btn--primary {
+  background: var(--brand-blue);
+  box-shadow: 0 10px 24px rgba(26, 86, 240, 0.24);
+}
+
+.btn--primary:hover {
+  background: var(--brand-blue-dark);
+  box-shadow: 0 14px 30px rgba(26, 86, 240, 0.3);
+}
+
+.btn--outline {
+  border-color: #d5e1f3;
+  color: var(--brand-navy);
+}
+
+.btn--outline:hover {
+  border-color: #b9cbea;
+  color: var(--brand-blue);
+}
+
+.btn--ghost {
+  border-color: #d5e1f3;
+  color: var(--brand-navy);
+  background: #fff;
+}
+
+/* Cards & panels --------------------------------------------------------- */
+.info-card,
+.card,
+.channel,
+.audience,
+.service-block,
+.form-card,
+.price-card,
+.detail-panel,
+.faq,
+.step,
+.process-list li,
+.price-panel {
+  border-radius: 16px;
+  border-color: var(--brand-line);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(12, 28, 56, 0.04);
+}
+
+.info-card:hover,
+.card:hover,
+.price-card:hover,
+.service-block:hover {
+  border-color: #cfdcf1;
+  box-shadow: var(--brand-shadow);
+}
+
+.info-card h3,
+.card h3,
+.channel h3,
+.price-card h3,
+.service-block h3 {
+  color: var(--brand-navy);
+}
+
+.card-icon,
+.channel-icon,
+.price-card-tag,
+.tag {
+  background: #eef4ff;
+  color: var(--brand-blue);
+}
+
+.tag {
+  border: 1px solid #dbe7fa;
+}
+
+.check-list li::before {
+  color: #12865c;
+}
+
+.note {
+  border-radius: 12px;
+  background: #f7faff;
+  border: 1px solid #e2ebf8;
+  color: #52667f;
+}
+
+/* Forms ------------------------------------------------------------------ */
+.form-card input,
+.form-card select,
+.form-card textarea,
+.contact-form input,
+.contact-form select,
+.contact-form textarea {
+  border-radius: 10px;
+  border-color: #d9e4f3;
+  font-family: var(--font-body);
+}
+
+.form-card input:focus,
+.form-card select:focus,
+.form-card textarea:focus,
+.contact-form input:focus,
+.contact-form select:focus,
+.contact-form textarea:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(26, 86, 240, 0.14);
+  outline: none;
+}
+
+.form-card label {
+  color: #33465f;
+}
+
+/* CTA panels ------------------------------------------------------------- */
+.cta-box {
+  border-radius: 22px;
+  background:
+    radial-gradient(620px 300px at 88% 8%, rgba(58, 112, 255, 0.36) 0%, rgba(58, 112, 255, 0) 62%),
+    linear-gradient(150deg, #0a1d38 0%, #0d2647 58%, #123a72 100%);
+  box-shadow: 0 26px 60px rgba(6, 20, 44, 0.22);
+}
+
+.cta-box h2 {
+  color: #fff;
+}
+
+.cta-box p {
+  color: #c2d3e9;
+}
+
+/* Tables used on older pages -------------------------------------------- */
+.table-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--brand-line);
+}
+
+/* Footer ----------------------------------------------------------------- */
+.site-footer {
+  background: linear-gradient(180deg, #08182f 0%, #0a1f3c 100%);
+}
+
+.site-footer h3 {
+  color: #fff;
+}
+
+.site-footer a,
+.site-footer .contact-line {
+  color: #b9cbe3;
+}
+
+.site-footer a:hover,
+.site-footer .contact-line:hover {
+  color: #fff;
+}
+
+.site-footer .brand-text .brand-name {
+  color: #fff;
+}
+
+.site-footer .brand-tag {
+  color: #93a9c4;
+}
+
+/* Responsive ------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .page-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .page-tag {
+    justify-self: start;
+    width: 100%;
+    max-width: 420px;
+  }
+}
+
+@media (max-width: 560px) {
+  .page-hero {
+    padding-top: 34px;
+  }
+
+  .page-hero h1 {
+    font-size: clamp(1.9rem, 8.4vw, 2.4rem);
+  }
+
+  .page-tag {
+    padding: 18px 20px;
+  }
+}
+
+/* Logo lockup ------------------------------------------------------------ */
+.brand img.brand-logo,
+.site-footer img.brand-logo {
+  height: 46px;
+  width: auto;
+  object-fit: contain;
+}
+
+.site-header .brand img.brand-logo {
+  height: 48px;
+}
+
+.auth-aside .brand img.brand-logo {
+  height: 44px;
+}
+
+@media (max-width: 560px) {
+  .site-header .brand img.brand-logo {
+    height: 40px;
+  }
+}

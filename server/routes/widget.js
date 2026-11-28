@@ -11,6 +11,19 @@ import {
   sendChatLeadEmail,
   sendChatStartedEmail,
 } from "../mail.js";
+import { ownerIsOnline, publishOwner, subscribeVisitor } from "../realtime.js";
+import { createNotification } from "../notify.js";
+import {
+  STATUS,
+  addSystemMessage,
+  aiPaused,
+  broadcastMessage,
+  normalizeStatus,
+  notifyHumanRequest,
+  notifyVisitorMessage,
+  readVisitorStreamToken,
+  visitorStreamToken,
+} from "../livechat.js";
 
 /* Public chatbot endpoints used by the embeddable widget. There is no session
    here: the assistant's public key identifies the business, and a conversation
@@ -150,7 +163,8 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     if (!conversation && visitorKey) {
       conversation = await one(
         `select * from conversations
-          where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+          where assistant_id = $1 and visitor_key = $2 and channel = 'widget'
+            and status in ('ai_active', 'open')
           order by updated_at desc
           limit 1`,
         [assistant.id, visitorKey]
@@ -163,7 +177,8 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
          select $1, $2, $3, 'widget', $4
           where $4 = '' or not exists (
             select 1 from conversations
-             where assistant_id = $2 and visitor_key = $4 and channel = 'widget' and status = 'open'
+             where assistant_id = $2 and visitor_key = $4 and channel = 'widget'
+               and status in ('ai_active', 'open')
           )
          returning *`,
         [assistant.user_id, assistant.id, body.message.slice(0, 70), visitorKey]
@@ -171,7 +186,8 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       if (!conversation && visitorKey) {
         conversation = await one(
           `select * from conversations
-            where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+            where assistant_id = $1 and visitor_key = $2 and channel = 'widget'
+              and status in ('ai_active', 'open')
             order by updated_at desc limit 1`,
           [assistant.id, visitorKey]
         );
@@ -220,7 +236,12 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
         );
         replayed = true;
       }
-      await query("update conversations set updated_at = now() where id = $1", [conversation.id]);
+      await query(
+        `update conversations
+            set updated_at = now(), last_message_at = now(), last_visitor_message_at = now()
+          where id = $1`,
+        [conversation.id]
+      );
     }
 
     if (!userMessage) {
@@ -233,7 +254,9 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       assistantMessageId: value?.id || null,
       reply: value?.content ?? "",
       replayed,
-      takeover: Boolean(conversation.takeover),
+      takeover: aiPaused(conversation),
+      status: normalizeStatus(conversation.status),
+      streamToken: visitorStreamToken(conversation),
     });
 
     const existingReply = await one(
@@ -272,9 +295,50 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
       }
     }
 
-    if (conversation.takeover) {
+    /* A human request or an active takeover pauses the AI completely: no model
+       call, so no credits are charged for this message. */
+    if (aiPaused(conversation)) {
       await query("update messages set status = 'done' where id = $1", [userMessage.id]);
-      return res.json({ ...replyFor(), takeover: true });
+      await query(
+        `update conversations
+            set last_message_at = now(), last_visitor_message_at = now(), updated_at = now()
+          where id = $1`,
+        [conversation.id]
+      );
+      const fresh = { ...conversation, status: normalizeStatus(conversation.status) };
+      broadcastMessage(fresh, { ...userMessage, status: "done" });
+      publishOwner(assistant.user_id, "message", {
+        conversationId: conversation.id,
+        message: { ...userMessage, status: "done" },
+      });
+      try {
+        await notifyVisitorMessage({
+          conversation: fresh,
+          message: userMessage,
+          assignedTo: conversation.human_assigned_to,
+        });
+        /* Nobody is watching the dashboard: record the message as unanswered so
+           it survives in the notification centre. */
+        if (!ownerIsOnline(assistant.user_id)) {
+          await createNotification({
+            userId: assistant.user_id,
+            kind: "unanswered",
+            level: "warning",
+            title: "A visitor is waiting for a reply",
+            body: "A live-chat visitor sent a message while no one was at the dashboard.",
+            link: `/dashboard?tab=live&conversation=${conversation.id}`,
+            conversationId: conversation.id,
+            dedupeKey: `unanswered:${conversation.id}:${userMessage.id}`,
+            emailSubject: "A visitor is waiting for a reply",
+            emailText: "A visitor sent a message in a live chat and no one has replied yet. Open Live Chat to answer.",
+            pushBody: "A visitor is waiting for a reply in a live chat.",
+            tag: `sbd-unanswered-${conversation.id}`,
+          });
+        }
+      } catch (error) {
+        console.error(`[widget] takeover notification failed for ${conversation.id} — ${error.message}`);
+      }
+      return res.json({ ...replyFor(), takeover: true, status: fresh.status });
     }
 
     /* A retry may arrive while the first request is still producing the answer.
@@ -340,7 +404,7 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
         messages: [
           ...history
             .reverse()
-            .filter((row) => row.author !== "team")
+            .filter((row) => row.author !== "team" && row.author !== "system")
             .map((row) => ({ role: row.role, content: row.content })),
         ],
       });
@@ -388,6 +452,14 @@ router.post("/:key/chat", limiter, async (req, res, next) => {
     }
 
     await query("update messages set status = 'done' where id = $1", [userMessage.id]);
+    await query(
+      `update conversations set last_message_at = now(), updated_at = now() where id = $1`,
+      [conversation.id]
+    );
+    if (assistantMessage) {
+      const payload = { conversationId: conversation.id, message: assistantMessage };
+      publishOwner(assistant.user_id, "message", payload);
+    }
 
     /* The business was already told about this message above, so this call only
        reports whether the notification actually went out. */
@@ -609,7 +681,8 @@ router.post("/:key/lead", limiter, async (req, res, next) => {
     if (!conversation && body.visitorId) {
       conversation = await one(
         `select * from conversations
-          where assistant_id = $1 and visitor_key = $2 and channel = 'widget' and status = 'open'
+          where assistant_id = $1 and visitor_key = $2 and channel = 'widget'
+            and status in ('ai_active', 'open')
           order by updated_at desc limit 1`,
         [assistant.id, body.visitorId]
       );
@@ -666,13 +739,14 @@ router.get("/:key/visitor/:visitorId/conversations", limiter, async (req, res, n
       [assistant.id, req.params.visitorId]
     );
 
-    const open = rows.find((row) => row.status === "open");
+    const open = rows.find((row) => normalizeStatus(row.status) === STATUS.AI);
     res.json({
-      open: open ? { id: open.id, status: open.status } : null,
+      open: open ? { id: open.id, status: STATUS.AI } : null,
       conversations: rows.map((row) => ({
         id: row.id,
         title: row.title,
-        status: row.status,
+        status: normalizeStatus(row.status),
+        statusLabel: row.status === "human_requested" ? "human requested" : normalizeStatus(row.status),
         messageCount: row.message_count,
         lastMessage: String(row.last_message || "").slice(0, 120),
         updatedAt: row.updated_at,
@@ -697,7 +771,10 @@ router.post("/:key/conversation/:id/end", limiter, async (req, res, next) => {
     if (!conversation) return res.status(404).json({ error: "Conversation not found." });
 
     await query(
-      "update conversations set status = 'resolved', updated_at = now() where id = $1",
+      `update conversations
+          set status = 'resolved', takeover = false, human_assigned_to = null,
+              resolved_at = now(), updated_at = now()
+        where id = $1`,
       [conversation.id]
     );
 
@@ -727,8 +804,9 @@ router.get("/:key/conversation/:id", limiter, async (req, res, next) => {
 
     res.json({
       conversationId: conversation.id,
-      takeover: Boolean(conversation.takeover),
-      status: conversation.status,
+      takeover: aiPaused(conversation),
+      status: normalizeStatus(conversation.status),
+      streamToken: visitorStreamToken(conversation),
       messages: messages.map((row) => ({
         id: row.id,
         role: row.role,
@@ -737,6 +815,248 @@ router.get("/:key/conversation/:id", limiter, async (req, res, next) => {
         createdAt: row.created_at,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Start (or reopen) a conversation without sending a message. The widget uses
+   this when a visitor asks for a person before typing anything. */
+router.post("/:key/conversation", limiter, async (req, res, next) => {
+  try {
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+    if (!assistant.is_active) {
+      return res.status(409).json({ error: "This chat is paused right now. Please contact the business directly." });
+    }
+    const body = z
+      .object({ visitorId: z.string().trim().regex(/^[a-zA-Z0-9-]{8,64}$/) })
+      .parse(req.body || {});
+
+    let conversation = await one(
+      `select * from conversations
+        where assistant_id = $1 and visitor_key = $2 and channel = 'widget'
+          and status in ('ai_active', 'open', 'human_requested', 'human_active')
+        order by updated_at desc limit 1`,
+      [assistant.id, body.visitorId]
+    );
+    if (!conversation) {
+      conversation = await one(
+        `insert into conversations (user_id, assistant_id, title, channel, visitor_key, last_message_at)
+         values ($1, $2, 'Website chat', 'widget', $3, now())
+         returning *`,
+        [assistant.user_id, assistant.id, body.visitorId]
+      );
+    }
+
+    res.json({
+      conversationId: conversation.id,
+      status: normalizeStatus(conversation.status),
+      takeover: aiPaused(conversation),
+      streamToken: visitorStreamToken(conversation),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---------- human takeover (visitor side) ---------- */
+
+/* The visitor taps "Talk to a Human". The backend owns the status change, the
+   AI stops immediately, the transcript stays, and the owner is notified. */
+router.post("/:key/conversation/:id/human", limiter, async (req, res, next) => {
+  try {
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+
+    const body = z
+      .object({ visitorId: z.string().trim().regex(/^[a-zA-Z0-9-]{8,64}$/).optional() })
+      .parse(req.body || {});
+
+    const conversation = await one(
+      "select * from conversations where id = $1 and assistant_id = $2 and channel = 'widget'",
+      [req.params.id, assistant.id]
+    );
+    if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+    /* A visitor may only act on their own conversation. */
+    if (conversation.visitor_key && body.visitorId !== conversation.visitor_key) {
+      return res.status(403).json({ error: "This conversation belongs to another visitor." });
+    }
+    if (normalizeStatus(conversation.status) === STATUS.RESOLVED) {
+      return res.status(409).json({ error: "This conversation has ended. Start a new chat to reach the team." });
+    }
+
+    let row = conversation;
+    const current = normalizeStatus(conversation.status);
+    if (current !== STATUS.REQUESTED && current !== STATUS.HUMAN) {
+      row = await one(
+        `update conversations
+            set status = 'human_requested', takeover = false,
+                human_requested_at = now(), last_message_at = now(), updated_at = now()
+          where id = $1
+          returning *`,
+        [conversation.id]
+      );
+      await addSystemMessage(
+        conversation.id,
+        "Your request has been sent to our support team. A human representative will assist you shortly."
+      );
+      try {
+        await notifyHumanRequest({ conversation: row, assistant });
+      } catch (error) {
+        console.error(`[widget] human request notification failed for ${conversation.id} — ${error.message}`);
+      }
+      publishOwner(assistant.user_id, "conversation", {
+        conversationId: row.id,
+        status: STATUS.REQUESTED,
+        takeover: false,
+      });
+    }
+
+    const online = ownerIsOnline(assistant.user_id);
+    res.json({
+      conversationId: row.id,
+      status: normalizeStatus(row.status),
+      takeover: true,
+      online,
+      streamToken: visitorStreamToken(row),
+      message:
+        "Your request has been sent to our support team. A human representative will assist you shortly.",
+      offlineMessage: online
+        ? ""
+        : "Our team is currently unavailable. Please leave your contact details and we will get back to you.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Offline enquiry: saved as a visitor message + lead, shown in the owner's
+   Leads section, and announced through the normal notification channels. */
+router.post("/:key/conversation/:id/enquiry", limiter, async (req, res, next) => {
+  try {
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+
+    const body = z
+      .object({
+        visitorId: z.string().trim().regex(/^[a-zA-Z0-9-]{8,64}$/).optional(),
+        name: z.string().trim().max(120).optional().default(""),
+        email: z.string().trim().max(254).optional().default(""),
+        phone: z.string().trim().max(40).optional().default(""),
+        message: z.string().trim().min(2, "Tell the team what you need.").max(2000),
+      })
+      .parse(req.body || {});
+
+    if (!body.email && !body.phone) {
+      return res.status(400).json({ error: "Add an email address or a phone number so the team can reply." });
+    }
+    if (body.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) {
+      return res.status(400).json({ error: "That email address does not look right." });
+    }
+
+    const conversation = await one(
+      "select * from conversations where id = $1 and assistant_id = $2 and channel = 'widget'",
+      [req.params.id, assistant.id]
+    );
+    if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+    if (conversation.visitor_key && body.visitorId !== conversation.visitor_key) {
+      return res.status(403).json({ error: "This conversation belongs to another visitor." });
+    }
+
+    const message = await one(
+      `insert into messages (conversation_id, role, content, author, status)
+       values ($1, 'user', $2, 'visitor', 'done')
+       returning *`,
+      [conversation.id, body.message]
+    );
+
+    await saveLead(assistant, conversation, {
+      name: body.name,
+      email: body.email.toLowerCase(),
+      phone: body.phone,
+      service: body.message.slice(0, 200),
+    });
+    await query(
+      `update leads set source = 'website_offline', updated_at = now()
+        where conversation_id = $1`,
+      [conversation.id]
+    );
+    const row = await one(
+      `update conversations
+          set status = 'human_requested',
+              human_requested_at = coalesce(human_requested_at, now()),
+              last_message_at = now(), last_visitor_message_at = now(), updated_at = now()
+        where id = $1
+        returning *`,
+      [conversation.id]
+    );
+
+    publishOwner(assistant.user_id, "message", {
+      conversationId: conversation.id,
+      message,
+    });
+    broadcastMessage({ ...row, status: STATUS.REQUESTED }, message);
+
+    try {
+      await createNotification({
+        userId: assistant.user_id,
+        kind: "offline_enquiry",
+        level: "warning",
+        title: "Offline chat enquiry",
+        body: `${body.name || "A website visitor"} left contact details while the team was offline.`,
+        link: `/dashboard?tab=leads&conversation=${conversation.id}`,
+        conversationId: conversation.id,
+        dedupeKey: `offline-enquiry:${conversation.id}:${message.id}`,
+        emailSubject: "Offline chat enquiry — a visitor left their details",
+        emailText: [
+          "A website visitor asked for a human and left their details.",
+          body.name ? `Name: ${body.name}` : "",
+          body.email ? `Email: ${body.email}` : "",
+          body.phone ? `Phone: ${body.phone}` : "",
+          `Message: ${body.message}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        pushBody: "A visitor left their details while your team was offline.",
+        tag: `sbd-offline-${conversation.id}`,
+      });
+    } catch (error) {
+      console.error(`[widget] offline enquiry notification failed: ${error.message}`);
+    }
+
+    await notifyLead(assistant, conversation);
+
+    res.status(201).json({
+      ok: true,
+      conversationId: conversation.id,
+      streamToken: visitorStreamToken(row),
+      message: "Thank you — your details are with the team and we will get back to you.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Live visitor stream. The token names the conversation and the visitor id, so
+   a guessed conversation id alone opens nothing. */
+router.get("/:key/conversation/:id/stream", async (req, res, next) => {
+  try {
+    const payload = readVisitorStreamToken(req.query.token);
+    if (!payload || payload.conversationId !== req.params.id) {
+      return res.status(401).json({ error: "This live connection is not authorised." });
+    }
+    const assistant = await assistantByKey(req.params.key);
+    if (!assistant) return res.status(404).json({ error: "This chat is not available." });
+    const conversation = await one(
+      "select * from conversations where id = $1 and assistant_id = $2 and channel = 'widget'",
+      [req.params.id, assistant.id]
+    );
+    if (!conversation) return res.status(404).json({ error: "Conversation not found." });
+    if (conversation.visitor_key && payload.visitorKey !== conversation.visitor_key) {
+      return res.status(403).json({ error: "This conversation belongs to another visitor." });
+    }
+    subscribeVisitor(req, res, conversation.id);
   } catch (error) {
     next(error);
   }

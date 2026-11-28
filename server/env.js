@@ -115,6 +115,8 @@ export const env = {
       apiUrl: (process.env.PAYSTACK_API_URL || "https://api.paystack.co").replace(/\/$/, ""),
       /* Empty means: use the plan's own currency. */
       currency: process.env.PAYSTACK_CURRENCY || "",
+      /* Signing secret for the charge.success webhook. Server-only. */
+      webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || "",
     },
     /* Flutterwave is the preferred online provider when its key is present;
        otherwise Paystack is used. The key is only ever read on the server. */
@@ -122,6 +124,9 @@ export const env = {
       secretKey: process.env.FLUTTERWAVE_SECRET_KEY || process.env.FLW_SECRET_KEY || "",
       apiUrl: (process.env.FLUTTERWAVE_API_URL || "https://api.flutterwave.com/v3").replace(/\/$/, ""),
       publicKey: process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.FLW_PUBLIC_KEY || "",
+      /* Webhook hash (v3) or signing secret (v4). Server-only. */
+      webhookSecret:
+        process.env.FLUTTERWAVE_WEBHOOK_SECRET || process.env.FLW_WEBHOOK_SECRET || "",
     },
     /* Public account details shown on the checkout screen. */
     bank: {
@@ -130,6 +135,18 @@ export const env = {
       accountNumber: process.env.PAYMENT_ACCOUNT_NUMBER || "",
       instructions: process.env.PAYMENT_INSTRUCTIONS || "",
     },
+  },
+  /* Firebase Cloud Messaging. The service account is used only to mint an
+     OAuth token on the server; the browser receives nothing but the public
+     web config and the VAPID key. */
+  firebase: {
+    projectId: (process.env.FIREBASE_PROJECT_ID || "").trim(),
+    clientEmail: (process.env.FIREBASE_CLIENT_EMAIL || "").trim(),
+    privateKey: process.env.FIREBASE_PRIVATE_KEY || "",
+    apiKey: (process.env.FIREBASE_API_KEY || "").trim(),
+    appId: (process.env.FIREBASE_APP_ID || "").trim(),
+    senderId: (process.env.FIREBASE_MESSAGING_SENDER_ID || "").trim(),
+    vapidKey: (process.env.FIREBASE_VAPID_KEY || "").trim(),
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || "",
@@ -178,7 +195,7 @@ export const env = {
     provider: ((process.env.EMAIL_PROVIDER || "").trim().toLowerCase() === "bravo"
       ? "brevo"
       : (process.env.EMAIL_PROVIDER || "").trim().toLowerCase()),
-    from: process.env.MAIL_FROM || "SBD AI Solutions <sbdiam.solutions@gmail.com>",
+    from: process.env.MAIL_FROM || "SBD Solutions <sbdiam.solutions@gmail.com>",
     replyTo: process.env.MAIL_REPLY_TO || "",
     brevo: {
       /* BREVO is often written as "bravo"; accept both so a typed variable name

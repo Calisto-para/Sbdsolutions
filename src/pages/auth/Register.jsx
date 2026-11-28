@@ -52,7 +52,7 @@ export default function Register() {
   return (
     <AuthShell
       title="Create your account"
-      intro="Set up your SBD AI Solutions account to build, train and test AI assistants for your business."
+      intro="Set up your SBD Solutions account to build, train and test AI assistants for your business."
       footer={
         <span>
           Already registered? <Link to="/login">Sign in</Link>

@@ -8,7 +8,7 @@ export default function Services() {
       <div>
         <nav className="breadcrumb" aria-label="Breadcrumb"><Link to="/">Home</Link><i>/</i><span>Services</span></nav>
         <h1>AI, Automation &amp; <span>Technology Solutions</span></h1>
-        <p className="lead">SBD AI Solutions helps businesses transform their operations through artificial intelligence, intelligent automation and custom software development. We create practical technology solutions that simplify processes, improve customer experiences and support business growth.</p>
+        <p className="lead">SBD Solutions helps businesses transform their operations through artificial intelligence, intelligent automation and custom software development. We create practical technology solutions that simplify processes, improve customer experiences and support business growth.</p>
         <div className="btn-row">
           <Link className="btn btn--primary" to="/start-a-project">Start a Project</Link>
           <a className="btn btn--outline" href="#ai-solutions">Jump to services</a>

@@ -8,7 +8,7 @@ export default function Contact() {
       <div>
         <nav className="breadcrumb" aria-label="Breadcrumb"><Link to="/">Home</Link><i>/</i><span>Contact</span></nav>
         <h1>Let's Build Something <span>Intelligent.</span></h1>
-        <p className="lead">Have a business challenge, technology idea or project in mind? Get in touch with SBD AI Solutions. Let's explore how artificial intelligence, automation and custom software can help you achieve your objectives.</p>
+        <p className="lead">Have a business challenge, technology idea or project in mind? Get in touch with SBD Solutions. Let's explore how artificial intelligence, automation and custom software can help you achieve your objectives.</p>
       </div>
       <aside className="page-tag">
         <strong>Direct contact</strong>

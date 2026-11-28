@@ -28,6 +28,22 @@ export default function AdminPayments() {
     load();
   }, []);
 
+  async function refund(payment) {
+    const reason = window.prompt(`Refund ${payment.currency || "USD"} ${Number(payment.amount).toFixed(2)}? Enter a reason.`);
+    if (reason === null) return;
+    setBusy(payment.id);
+    setError("");
+    try {
+      const result = await api(`/admin/payments/${payment.id}/refund`, { method: "POST", body: { reason } });
+      setNotice(result.message || "Refund recorded.");
+      await load(status);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function verify(id) {
     if (!window.confirm("Verify this payment and activate the plan?")) return;
     setBusy(id);
@@ -190,6 +206,17 @@ export default function AdminPayments() {
                             onClick={() => reject(payment.id)}
                           >
                             Reject
+                          </button>
+                        </div>
+                      ) : payment.status === "paid" ? (
+                        <div className="panel-actions">
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            disabled={busy === payment.id}
+                            onClick={() => refund(payment)}
+                          >
+                            Refund
                           </button>
                         </div>
                       ) : (

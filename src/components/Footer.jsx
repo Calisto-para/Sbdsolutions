@@ -8,19 +8,22 @@ export default function Footer() {
       <div className="container">
         <div className="footer-grid">
           <div className="footer-brand">
-            <Link className="brand" to="/" aria-label="SBD AI Solutions home">
-              <img className="brand-mark brand-tile" src="/sbd-ai-solutions-icon.png" alt="" width="42" height="42" />
-              <span className="brand-text">
-                <span className="brand-name">SBD AI Solutions</span>
-                <span className="brand-tag">Intelligent Technology. Smarter Business.</span>
-              </span>
+            <Link className="brand" to="/" aria-label="SBD Solutions home">
+              <img
+                className="brand-logo brand-logo--light"
+                src="/brand/sbd-solutions-logo-light.png"
+                alt="SBD Solutions — Intelligent Technology. Smarter Business."
+                width="205"
+                height="52"
+              />
             </Link>
           </div>
           <div className="footer-col">
             <h3>Company</h3>
             <Link to="/about">About Us</Link>
+            <Link to="/products">Products</Link>
             <Link to="/projects">Projects</Link>
-            <Link to="/pricing">Project pricing</Link>
+            <Link to="/pricing">Pricing</Link>
             <Link to="/who-we-help">Who We Help</Link>
             <Link to="/contact">Contact</Link>
           </div>
@@ -57,7 +60,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="footer-bottom">
-          <span>&copy; {year} SBD AI Solutions. All rights reserved.</span>
+          <span>&copy; {year} SBD Solutions. All rights reserved.</span>
           <span>Intelligent Technology. Smarter Business.</span>
         </div>
       </div>

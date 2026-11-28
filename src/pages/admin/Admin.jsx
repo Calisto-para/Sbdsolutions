@@ -8,14 +8,28 @@ import AdminUsers from "./AdminUsers";
 import AdminConversations from "./AdminConversations";
 import AdminPlatform from "./AdminPlatform";
 import AdminPayments from "./AdminPayments";
+import AdminCreditPacks from "./AdminCreditPacks";
 import AdminProjects from "./AdminProjects";
+import AdminSupport from "./AdminSupport";
+import AdminCustomRequests from "./AdminCustomRequests";
+import AdminRevenue from "./AdminRevenue";
+import AdminNotifications from "./AdminNotifications";
+import AdminIntegrations from "./AdminIntegrations";
+import AdminSubscriptions from "./AdminSubscriptions";
 
 const SECTIONS = [
   { key: "overview", label: "Overview" },
   { key: "users", label: "Customers" },
   { key: "platform", label: "Businesses & usage" },
+  { key: "revenue", label: "Revenue & reports" },
+  { key: "notifications", label: "Notifications" },
+  { key: "subscriptions", label: "Subscriptions" },
   { key: "payments", label: "Payments" },
+  { key: "integrations", label: "Integrations" },
+  { key: "credits", label: "Credit packs" },
   { key: "projects", label: "Project enquiries" },
+  { key: "custom", label: "Custom requests" },
+  { key: "support", label: "Support tickets" },
   { key: "conversations", label: "Conversations" },
 ];
 
@@ -35,7 +49,7 @@ export default function Admin() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === "admin") document.title = "Operations | SBD AI Solutions";
+    if (user?.role === "admin") document.title = "Operations | SBD Solutions";
   }, [user]);
 
   if (status === "loading") return <div className="dash-loading">Loading…</div>;
@@ -52,7 +66,7 @@ export default function Admin() {
     <div className="dash admin">
       <aside className={`dash-side${menuOpen ? " is-open" : ""}`}>
         <span className="dash-brand">
-          <img className="dash-brand-tile" src="/sbd-ai-solutions-icon.png" alt="" width="34" height="34" />
+          <img className="dash-brand-tile" src="/brand/sbd-solutions-mark.png" alt="" width="34" height="34" />
           <span>Operations</span>
         </span>
         <nav className="dash-nav" aria-label="Operations sections">
@@ -109,8 +123,15 @@ export default function Admin() {
           {tab === "users" ? <AdminUsers /> : null}
           {tab === "platform" ? <AdminPlatform /> : null}
           {tab === "payments" ? <AdminPayments /> : null}
+          {tab === "credits" ? <AdminCreditPacks /> : null}
           {tab === "projects" ? <AdminProjects /> : null}
           {tab === "conversations" ? <AdminConversations /> : null}
+          {tab === "custom" ? <AdminCustomRequests /> : null}
+          {tab === "support" ? <AdminSupport /> : null}
+          {tab === "revenue" ? <AdminRevenue /> : null}
+          {tab === "subscriptions" ? <AdminSubscriptions /> : null}
+          {tab === "notifications" ? <AdminNotifications /> : null}
+          {tab === "integrations" ? <AdminIntegrations /> : null}
         </div>
       </div>
     </div>

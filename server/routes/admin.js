@@ -2,6 +2,9 @@ import express from "express";
 import { z } from "zod";
 import { query, one } from "../db.js";
 import { requireAdmin, publicUser } from "../auth.js";
+import { logAudit } from "../audit.js";
+import { createNotification } from "../notify.js";
+import { revenueReport, rangeFrom, notificationFeed, markNotificationsRead, integrationStatus } from "../reports.js";
 import { mailDiagnostics } from "../mail-check.js";
 import { sendTestEmail } from "../mail.js";
 import { complete, aiStatus } from "../ai.js";
@@ -185,6 +188,30 @@ router.get("/users/:id", async (req, res, next) => {
 
     const subscription = await one("select * from subscriptions where user_id = $1", [id]);
 
+    const [payments, tickets, usage] = await Promise.all([
+      query(
+        `select id, amount, currency, status, kind, reference, created_at, verified_at
+           from payments where user_id = $1 order by created_at desc limit 12`,
+        [id]
+      ),
+      query(
+        `select id, subject, status, priority, created_at from support_tickets
+          where user_id = $1 order by created_at desc limit 8`,
+        [id]
+      ),
+      one(
+        `select
+           (select count(*)::int from conversations where user_id = $1) as conversations,
+           (select count(*)::int from leads where user_id = $1) as leads,
+           (select count(*)::int from knowledge_items where user_id = $1) as knowledge_items`,
+        [id]
+      ),
+    ]);
+
+    const planRow = subscription?.plan_id
+      ? await one("select * from plans where id = $1", [subscription.plan_id])
+      : null;
+
     res.json({
       user: {
         ...publicUser(user),
@@ -195,10 +222,44 @@ router.get("/users/:id", async (req, res, next) => {
       subscription: subscription
         ? {
             planId: subscription.plan_id,
+            planName: planRow?.name || "",
+            customPlan: Boolean(planRow?.custom && planRow?.custom_request_id),
+            creditsAllowance: planRow ? (planRow.unlimited_credits ? null : Number(planRow.credit_limit || 0)) : null,
+            customerLimit: planRow ? Number(planRow.message_limit || 0) : null,
+            assistantLimit: planRow ? Number(planRow.assistant_limit || 0) : null,
+            customActivatedAt: subscription.custom_activated_at || null,
+            customPreviousPlanId: subscription.custom_previous_plan_id || null,
             status: subscription.status,
             agentAllowance: subscription.agent_allowance ?? null,
+            startedAt: subscription.started_at,
+            currentPeriodEnd: subscription.current_period_end,
+            cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+            creditsUsed: Number(subscription.credits_used || 0),
+            bonusCredits: Number(subscription.bonus_credits || 0),
           }
         : null,
+      payments: payments.map((row) => ({
+        id: row.id,
+        amount: Number(row.amount),
+        currency: row.currency,
+        status: row.status,
+        kind: row.kind || "plan",
+        reference: row.reference,
+        createdAt: row.created_at,
+        verifiedAt: row.verified_at,
+      })),
+      tickets: tickets.map((row) => ({
+        id: row.id,
+        subject: row.subject,
+        status: row.status,
+        priority: row.priority,
+        createdAt: row.created_at,
+      })),
+      usage: {
+        conversations: Number(usage?.conversations || 0),
+        leads: Number(usage?.leads || 0),
+        knowledgeItems: Number(usage?.knowledge_items || 0),
+      },
       business: business
         ? {
             name: business.name,
@@ -279,6 +340,13 @@ router.patch("/users/:id", async (req, res, next) => {
       );
     }
 
+    await logAudit({
+      actorId: req.user.id,
+      action: body.suspended === undefined ? "account.update" : body.suspended ? "account.suspend" : "account.reactivate",
+      target: id,
+      meta: { role: body.role ?? null, suspended: body.suspended ?? null, agentAllowance: body.agentAllowance ?? null },
+    });
+
     res.json({
       ok: true,
       user: publicUser(updated),
@@ -348,9 +416,24 @@ router.post("/payments/:id/verify", async (req, res, next) => {
     if (payment.status === "rejected") {
       return res.status(400).json({ error: "This payment was rejected. Ask the customer to choose the plan again." });
     }
+    if (payment.status !== "pending") {
+      return res.status(409).json({ error: `This payment is already ${payment.status}. Nothing was activated again.` });
+    }
 
     await activatePayment(payment, { verifiedBy: req.user.id, method: payment.method || "transfer" });
-    res.json({ ok: true, message: `Payment verified. The customer is now on the plan.` });
+    await logAudit({
+      actorId: req.user.id,
+      action: "payment.verify",
+      target: payment.id,
+      meta: { reference: payment.reference, amount: Number(payment.amount), currency: payment.currency },
+    });
+    const isCustom = (payment.kind || "plan") === "custom";
+    res.json({
+      ok: true,
+      message: isCustom
+        ? "Payment verified. The custom request is approved."
+        : "Payment verified. The customer is now on the plan.",
+    });
   } catch (error) {
     next(error);
   }
@@ -368,6 +451,12 @@ router.post("/payments/:id/reject", async (req, res, next) => {
     );
     if (!updated) return res.status(404).json({ error: "Payment not found." });
 
+    await logAudit({
+      actorId: req.user.id,
+      action: "payment.reject",
+      target: updated.id,
+      meta: { reference: updated.reference, reason: reason || "Not received" },
+    });
     res.json({ ok: true, message: "Payment rejected. The plan was not activated." });
   } catch (error) {
     next(error);
@@ -851,6 +940,661 @@ router.get("/usage", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/* ---------- additional-credit packages ---------- */
+/* The operator is the only source of package prices and credit amounts. Until
+   a package is created and active, the customer's purchase button stays
+   disabled. */
+
+const packageSchema = z.object({
+  name: z.string().trim().min(2, "Give the pack a name.").max(80),
+  credits: z.coerce.number().int().min(1, "Credits must be at least 1.").max(10_000_000),
+  price: z.coerce.number().min(0.01, "The price must be greater than zero.").max(1_000_000),
+  currency: z.string().trim().length(3).optional().default("USD"),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.coerce.number().int().min(0).max(999).optional().default(0),
+});
+
+router.get("/credit-packages", async (req, res, next) => {
+  try {
+    const rows = await query(
+      `select * from credit_packages order by sort_order asc, credits asc`
+    );
+    const sold = await one(
+      `select count(*)::int as purchases, coalesce(sum(credits), 0)::int as credits
+         from credit_purchases`
+    );
+    res.json({
+      packages: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        credits: Number(row.credits),
+        price: Number(row.price),
+        currency: row.currency,
+        active: Boolean(row.active),
+        sortOrder: row.sort_order,
+        createdAt: row.created_at,
+      })),
+      sold: { purchases: Number(sold?.purchases || 0), credits: Number(sold?.credits || 0) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/credit-packages", async (req, res, next) => {
+  try {
+    const body = packageSchema.parse(req.body || {});
+    const row = await one(
+      `insert into credit_packages (name, credits, price, currency, active, sort_order)
+       values ($1, $2, $3, $4, $5, $6) returning *`,
+      [body.name, body.credits, body.price, body.currency.toUpperCase(), body.active, body.sortOrder]
+    );
+    res.status(201).json({
+      package: {
+        id: row.id,
+        name: row.name,
+        credits: Number(row.credits),
+        price: Number(row.price),
+        currency: row.currency,
+        active: Boolean(row.active),
+      },
+      message: `${row.credits.toLocaleString("en-GB")} credit pack created. It is now purchasable.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/credit-packages/:id", async (req, res, next) => {
+  try {
+    const body = packageSchema.partial().parse(req.body || {});
+    const existing = await one("select * from credit_packages where id = $1", [req.params.id]);
+    if (!existing) return res.status(404).json({ error: "Credit pack not found." });
+    const row = await one(
+      `update credit_packages
+          set name = coalesce($2, name),
+              credits = coalesce($3, credits),
+              price = coalesce($4, price),
+              currency = coalesce($5, currency),
+              active = coalesce($6, active),
+              sort_order = coalesce($7, sort_order),
+              updated_at = now()
+        where id = $1
+        returning *`,
+      [
+        req.params.id,
+        body.name ?? null,
+        body.credits ?? null,
+        body.price ?? null,
+        body.currency ? body.currency.toUpperCase() : null,
+        body.active ?? null,
+        body.sortOrder ?? null,
+      ]
+    );
+    res.json({
+      package: {
+        id: row.id,
+        name: row.name,
+        credits: Number(row.credits),
+        price: Number(row.price),
+        currency: row.currency,
+        active: Boolean(row.active),
+      },
+      message: "Credit pack updated.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/credit-packages/:id", async (req, res, next) => {
+  try {
+    const row = await one("delete from credit_packages where id = $1 returning id", [
+      req.params.id,
+    ]);
+    if (!row) return res.status(404).json({ error: "Credit pack not found." });
+    res.json({ ok: true, message: "Credit pack removed. Existing purchases are not affected." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ---- Support tickets ---------------------------------------------------- */
+router.get("/support", async (req, res, next) => {
+  try {
+    const status = String(req.query.status || "").trim();
+    const q = String(req.query.q || "").trim();
+    const rows = await query(
+      `select t.*, u.full_name, u.email, u.business_name,
+              (select count(*)::int from support_messages m where m.ticket_id = t.id) as message_count,
+              (select body from support_messages m where m.ticket_id = t.id order by m.created_at desc limit 1) as last_message
+         from support_tickets t
+         join users u on u.id = t.user_id
+        where ($1 = '' or t.status = $1)
+          and ($2 = '' or t.subject ilike '%' || $2 || '%' or u.email ilike '%' || $2 || '%' or u.full_name ilike '%' || $2 || '%')
+        order by t.updated_at desc
+        limit 200`,
+      [status, q]
+    );
+    res.json({
+      tickets: rows.map((row) => ({
+        id: row.id,
+        subject: row.subject,
+        category: row.category,
+        priority: row.priority,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        messageCount: Number(row.message_count || 0),
+        lastMessage: row.last_message || "",
+        customer: { name: row.full_name, email: row.email, businessName: row.business_name },
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/support/:id", async (req, res, next) => {
+  try {
+    const ticket = await one(
+      `select t.*, u.full_name, u.email, u.business_name, u.id as user_id
+         from support_tickets t join users u on u.id = t.user_id
+        where t.id = $1`,
+      [req.params.id]
+    );
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    const messages = await query(
+      `select id, author_role, body, created_at from support_messages where ticket_id = $1 order by created_at asc`,
+      [ticket.id]
+    );
+    res.json({
+      ticket: {
+        id: ticket.id,
+        subject: ticket.subject,
+        category: ticket.category,
+        priority: ticket.priority,
+        status: ticket.status,
+        createdAt: ticket.created_at,
+        customer: {
+          id: ticket.user_id,
+          name: ticket.full_name,
+          email: ticket.email,
+          businessName: ticket.business_name,
+        },
+      },
+      messages: messages.map((row) => ({ id: row.id, author: row.author_role, body: row.body, createdAt: row.created_at })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/support/:id/messages", async (req, res, next) => {
+  try {
+    const body = String(req.body?.message || "").trim();
+    if (!body) return res.status(400).json({ error: "Write a reply first." });
+    const ticket = await one("select * from support_tickets where id = $1", [req.params.id]);
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    await query(
+      `insert into support_messages (ticket_id, author_role, author_id, body) values ($1, 'staff', $2, $3)`,
+      [ticket.id, req.user.id, body]
+    );
+    await query(
+      `update support_tickets set status = 'pending', updated_at = now(), last_staff_reply_at = now() where id = $1`,
+      [ticket.id]
+    );
+    await createNotification({
+      userId: ticket.user_id,
+      kind: "support_reply",
+      title: "Support replied to your ticket",
+      body: `We replied to "${ticket.subject}". Open Support in your dashboard to read it.`,
+      link: "/dashboard?tab=support",
+      dedupeKey: `support:${ticket.id}:${Date.now()}`,
+      emailSubject: "Support replied to your ticket",
+      emailText: `We replied to "${ticket.subject}". Open Support in your dashboard to read it.`,
+    }).catch(() => {});
+    await logAudit({ actorId: req.user.id, action: "support.reply", target: ticket.id, meta: { subject: ticket.subject } });
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/support/:id", async (req, res, next) => {
+  try {
+    const status = String(req.body?.status || "").trim();
+    const priority = String(req.body?.priority || "").trim();
+    if (status && !["open", "pending", "resolved"].includes(status)) {
+      return res.status(400).json({ error: "Unknown ticket status." });
+    }
+    if (priority && !["low", "normal", "high", "urgent"].includes(priority)) {
+      return res.status(400).json({ error: "Unknown priority." });
+    }
+    const ticket = await one(
+      `update support_tickets
+          set status = coalesce(nullif($2, ''), status),
+              priority = coalesce(nullif($3, ''), priority),
+              updated_at = now()
+        where id = $1 returning *`,
+      [req.params.id, status, priority]
+    );
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    await logAudit({ actorId: req.user.id, action: "support.update", target: ticket.id, meta: { status: ticket.status, priority: ticket.priority } });
+    res.json({ ticket: { id: ticket.id, status: ticket.status, priority: ticket.priority } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+/* ---- Subscription management ------------------------------------------- */
+router.get("/subscriptions", async (req, res, next) => {
+  try {
+    const status = String(req.query.status || "").trim();
+    const q = String(req.query.q || "").trim();
+    const rows = await query(
+      `select s.*, u.full_name, u.email, u.business_name, p.name as plan_name, p.price, p.currency,
+              p.credit_limit, p.message_limit
+         from subscriptions s
+         join users u on u.id = s.user_id
+         left join plans p on p.id = s.plan_id
+        where ($1 = '' or s.status = $1)
+          and ($2 = '' or u.email ilike '%' || $2 || '%' or u.full_name ilike '%' || $2 || '%')
+        order by s.updated_at desc
+        limit 200`,
+      [status, q]
+    );
+    res.json({
+      subscriptions: rows.map((row) => ({
+        userId: row.user_id,
+        customer: { name: row.full_name, email: row.email, businessName: row.business_name },
+        planId: row.plan_id,
+        planName: row.plan_name || row.plan_id,
+        price: Number(row.price || 0),
+        currency: row.currency || "USD",
+        status: row.status,
+        startedAt: row.started_at,
+        currentPeriodEnd: row.current_period_end,
+        cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+        creditsUsed: Number(row.credits_used || 0),
+        creditLimit: row.credit_limit == null ? null : Number(row.credit_limit),
+        agentAllowance: row.agent_allowance ?? null,
+      })),
+      plans: (await query("select id, name, price, currency, custom from plans order by sort_order asc")).map((row) => ({
+        id: row.id,
+        name: row.name,
+        price: Number(row.price),
+        currency: row.currency,
+        custom: Boolean(row.custom),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/subscriptions/:userId", async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        status: z.enum(["active", "canceled", "past_due", "expired"]).optional(),
+        planId: z.string().trim().min(1).max(60).optional(),
+      })
+      .refine((data) => data.status || data.planId, { message: "Choose a status or a plan." })
+      .parse(req.body || {});
+
+    if (body.planId) {
+      const plan = await one("select id from plans where id = $1", [body.planId]);
+      if (!plan) return res.status(400).json({ error: "That plan does not exist." });
+    }
+
+    const updated = await one(
+      `update subscriptions
+          set status = coalesce($2, status),
+              plan_id = coalesce($3, plan_id),
+              updated_at = now()
+        where user_id = $1
+        returning *`,
+      [req.params.userId, body.status || null, body.planId || null]
+    );
+    if (!updated) return res.status(404).json({ error: "Subscription not found." });
+
+    await logAudit({
+      actorId: req.user.id,
+      action: "subscription.update",
+      target: req.params.userId,
+      meta: { status: updated.status, planId: updated.plan_id },
+    });
+
+    res.json({
+      ok: true,
+      subscription: {
+        userId: updated.user_id,
+        planId: updated.plan_id,
+        status: updated.status,
+        currentPeriodEnd: updated.current_period_end,
+      },
+      message: "Subscription updated.",
+    });
+  } catch (error) {
+    if (error?.name === "ZodError") {
+      return res.status(400).json({ error: error.issues[0]?.message || "Check the details." });
+    }
+    next(error);
+  }
+});
+
+router.post("/payments/:id/refund", async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        amount: z.coerce.number().positive().optional(),
+        reason: z.string().trim().max(300).optional().default(""),
+      })
+      .parse(req.body || {});
+
+    const payment = await one("select * from payments where id = $1", [req.params.id]);
+    if (!payment) return res.status(404).json({ error: "Payment not found." });
+    if (payment.status !== "paid") {
+      return res.status(400).json({ error: "Only a verified payment can be refunded." });
+    }
+    const existing = await one("select id from refunds where payment_id = $1", [payment.id]);
+    if (existing) return res.status(409).json({ error: "This payment has already been refunded." });
+
+    const amount = Number(body.amount || payment.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > Number(payment.amount)) {
+      return res.status(400).json({ error: "Refund amount must be between 0 and the payment amount." });
+    }
+
+    const refund = await one(
+      `insert into refunds (payment_id, user_id, amount, currency, reason, refunded_by)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (payment_id) do nothing
+       returning *`,
+      [payment.id, payment.user_id, amount, payment.currency || "USD", body.reason || "Operator refund", req.user.id]
+    );
+    if (!refund) return res.status(409).json({ error: "This payment has already been refunded." });
+
+    await query("update payments set status = 'refunded' where id = $1", [payment.id]);
+    await logAudit({
+      actorId: req.user.id,
+      action: "payment.refund",
+      target: payment.id,
+      meta: { amount, currency: payment.currency, reason: body.reason || "" },
+    });
+    await createNotification({
+      userId: payment.user_id,
+      kind: "billing",
+      title: "Refund recorded",
+      body: `${payment.currency || "USD"} ${amount.toFixed(2)} was refunded for invoice ${payment.reference || payment.id}.`,
+      link: "/dashboard?tab=subscriptions",
+      dedupeKey: `refund:${payment.id}`,
+      emailSubject: "Your refund has been recorded",
+      emailText: `A refund of ${payment.currency || "USD"} ${amount.toFixed(2)} has been recorded for invoice ${payment.reference || payment.id}.`,
+    }).catch(() => {});
+
+    res.json({ ok: true, refund: { id: refund.id, amount, currency: refund.currency }, message: "Refund recorded." });
+  } catch (error) {
+    if (error?.name === "ZodError") {
+      return res.status(400).json({ error: error.issues[0]?.message || "Check the refund details." });
+    }
+    next(error);
+  }
+});
+
+/* ---- Custom requests ---------------------------------------------------- */
+router.get("/custom-requests", async (req, res, next) => {
+  try {
+    const status = String(req.query.status || "");
+    const rows = await query(
+      `select r.*, u.full_name as customer_name, u.email as customer_email,
+              (select count(*)::int from custom_offers o where o.request_id = r.id) as offer_count
+         from custom_requests r
+         join users u on u.id = r.user_id
+        where ($1 = '' or r.status = $1)
+        order by r.updated_at desc limit 100`,
+      [status]
+    );
+    res.json({
+      requests: rows.map((row) => ({
+        id: row.id, title: row.title, kind: row.kind, product: row.product, status: row.status,
+        requirements: row.requirements, expectedUsage: row.expected_usage, budget: row.budget,
+        billingPreference: row.billing_preference, websites: row.websites, whatsappNumbers: row.whatsapp_numbers,
+        adminNotes: row.admin_notes, assignedTo: row.assigned_to, offerCount: row.offer_count,
+        customer: { id: row.user_id, name: row.customer_name, email: row.customer_email },
+        createdAt: row.created_at, updatedAt: row.updated_at,
+      })),
+    });
+  } catch (error) { next(error); }
+});
+
+router.get("/custom-requests/:id", async (req, res, next) => {
+  try {
+    const request = await one(
+      `select r.*, u.full_name as customer_name, u.email as customer_email
+         from custom_requests r join users u on u.id = r.user_id where r.id = $1`,
+      [req.params.id]
+    );
+    if (!request) return res.status(404).json({ error: "Request not found." });
+    const offers = await query(
+      "select * from custom_offers where request_id = $1 order by created_at desc",
+      [request.id]
+    );
+    res.json({
+      request: {
+        id: request.id, title: request.title, kind: request.kind, product: request.product,
+        status: request.status, requirements: request.requirements, expectedUsage: request.expected_usage,
+        budget: request.budget, billingPreference: request.billing_preference, websites: request.websites,
+        whatsappNumbers: request.whatsapp_numbers, adminNotes: request.admin_notes, assignedTo: request.assigned_to,
+        contactName: request.contact_name, businessName: request.business_name, email: request.email, phone: request.phone,
+        customer: { id: request.user_id, name: request.customer_name, email: request.customer_email },
+        createdAt: request.created_at, updatedAt: request.updated_at,
+      },
+      offers: offers.map((offer) => ({
+        id: offer.id, name: offer.name, description: offer.description, price: Number(offer.price),
+        currency: offer.currency, billingPeriod: offer.billing_period, credits: offer.credits,
+        customerLimit: offer.customer_limit, websiteLimit: offer.website_limit,
+        includedFeatures: offer.included_features, conditions: offer.conditions, status: offer.status,
+        revisionNote: offer.revision_note, paymentId: offer.payment_id, expiresAt: offer.expires_at,
+        createdAt: offer.created_at,
+      })),
+    });
+  } catch (error) { next(error); }
+});
+
+router.patch("/custom-requests/:id", async (req, res, next) => {
+  try {
+    const body = z.object({
+      status: z.enum(["pending", "reviewing", "offer_sent", "awaiting_customer", "approved", "rejected", "completed"]).optional(),
+      adminNotes: z.string().trim().max(4000).optional(),
+      assignedTo: z.string().trim().max(120).optional(),
+    }).parse(req.body || {});
+    const request = await one("select * from custom_requests where id = $1", [req.params.id]);
+    if (!request) return res.status(404).json({ error: "Request not found." });
+    const updated = await one(
+      `update custom_requests
+          set status = coalesce($2, status), admin_notes = coalesce($3, admin_notes),
+              assigned_to = coalesce($4, assigned_to), updated_at = now()
+        where id = $1 returning *`,
+      [request.id, body.status ?? null, body.adminNotes ?? null, body.assignedTo ?? null]
+    );
+    await logAudit({ actorId: req.user.id, action: "custom_request.update", target: request.id, meta: body });
+    if (body.status) {
+      await createNotification({
+        userId: request.user_id, kind: "project", title: `Custom request ${body.status.replace(/_/g, " ")}`,
+        body: `Your request “${request.title}” is now ${body.status.replace(/_/g, " ")}.`,
+        link: "/dashboard?tab=requests", dedupeKey: `creq:${request.id}:${body.status}:${Date.now()}`,
+      }).catch(() => {});
+    }
+    res.json({ ok: true, request: { id: updated.id, status: updated.status }, message: "Request updated." });
+  } catch (error) {
+    if (error?.name === "ZodError") return res.status(400).json({ error: error.issues[0]?.message || "Check the update." });
+    next(error);
+  }
+});
+
+router.post("/custom-requests/:id/offers", async (req, res, next) => {
+  try {
+    const body = z.object({
+      name: z.string().trim().min(3).max(160),
+      description: z.string().trim().max(4000).default(""),
+      price: z.coerce.number().positive().max(1000000),
+      currency: z.enum(["USD", "NGN"]).default("USD"),
+      billingPeriod: z.enum(["one-off", "monthly", "annual"]).default("one-off"),
+      credits: z.coerce.number().int().min(0).max(10000000).optional(),
+      customerLimit: z.coerce.number().int().min(0).max(1000000).optional(),
+      websiteLimit: z.coerce.number().int().min(0).max(10000).optional(),
+      assistantLimit: z.coerce.number().int().min(0).max(10000).optional(),
+      zeroCost: z.boolean().default(false),
+      includedFeatures: z.string().trim().max(2000).default(""),
+      conditions: z.string().trim().max(2000).default(""),
+      expiresInDays: z.coerce.number().int().min(1).max(120).default(14),
+      send: z.boolean().default(true),
+    }).parse(req.body || {});
+    const request = await one("select * from custom_requests where id = $1", [req.params.id]);
+    if (!request) return res.status(404).json({ error: "Request not found." });
+    if (request.status === "approved") return res.status(400).json({ error: "This request is already approved." });
+
+    if (body.zeroCost && Number(body.price) !== 0) {
+      return res.status(400).json({ error: "A zero-cost offer must have a price of 0." });
+    }
+    if (!body.zeroCost && Number(body.price) <= 0) {
+      return res.status(400).json({ error: "Set a price, or explicitly mark the offer zero-cost." });
+    }
+    const offer = await one(
+      `insert into custom_offers
+         (request_id, name, description, price, currency, billing_period, credits, customer_limit,
+          website_limit, assistant_limit, zero_cost, included_features, conditions, expires_at, status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now() + ($14 || ' days')::interval, $15)
+       returning *`,
+      [request.id, body.name, body.description, body.price, body.currency, body.billingPeriod,
+       body.credits ?? null, body.customerLimit ?? null, body.websiteLimit ?? null,
+       body.assistantLimit ?? null, body.zeroCost,
+       body.includedFeatures, body.conditions, String(body.expiresInDays), body.send ? "sent" : "draft"]
+    );
+    if (body.send) {
+      await query("update custom_requests set status = 'offer_sent', updated_at = now() where id = $1", [request.id]);
+      await createNotification({
+        userId: request.user_id, kind: "project", title: "You have a new offer",
+        body: `${offer.name} — ${offer.currency} ${Number(offer.price).toFixed(2)}. Review and accept it from Custom requests.`,
+        link: "/dashboard?tab=requests", dedupeKey: `offer:${offer.id}`,
+      }).catch(() => {});
+    }
+    await logAudit({ actorId: req.user.id, action: "custom_request.offer", target: request.id, meta: { offerId: offer.id, price: body.price, currency: body.currency } });
+    res.status(201).json({ ok: true, offer: { id: offer.id, status: offer.status }, message: body.send ? "Offer sent." : "Draft saved." });
+  } catch (error) {
+    if (error?.name === "ZodError") return res.status(400).json({ error: error.issues[0]?.message || "Check the offer." });
+    next(error);
+  }
+});
+
+router.patch("/custom-requests/:id/offers/:offerId", async (req, res, next) => {
+  try {
+    const body = z.object({ action: z.enum(["send", "withdraw"]) }).parse(req.body || {});
+    const offer = await one("select * from custom_offers where id = $1 and request_id = $2", [
+      req.params.offerId, req.params.id,
+    ]);
+    if (!offer) return res.status(404).json({ error: "Offer not found." });
+    if (["paid", "accepted"].includes(offer.status)) {
+      return res.status(400).json({ error: "An accepted or paid offer cannot be changed." });
+    }
+    const status = body.action === "send" ? "sent" : "withdrawn";
+    await query("update custom_offers set status = $2, updated_at = now() where id = $1", [offer.id, status]);
+    if (status === "sent") {
+      await query("update custom_requests set status = 'offer_sent', updated_at = now() where id = $1", [offer.request_id]);
+    }
+    await logAudit({ actorId: req.user.id, action: `custom_request.offer.${body.action}`, target: offer.request_id, meta: { offerId: offer.id } });
+    res.json({ ok: true, message: status === "sent" ? "Offer sent." : "Offer withdrawn." });
+  } catch (error) {
+    if (error?.name === "ZodError") return res.status(400).json({ error: "Choose send or withdraw." });
+    next(error);
+  }
+});
+
+/* ---- Financial analytics, notifications and integrations ---------------- */
+router.get("/revenue", async (req, res, next) => {
+  try {
+    const { days, from, to } = rangeFrom(req.query);
+    const report = await revenueReport(from, to);
+    res.json({ ...report, days });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/revenue/export.csv", async (req, res, next) => {
+  try {
+    const { days, from, to } = rangeFrom(req.query);
+    const report = await revenueReport(from, to);
+    const lines = [
+      ["Section", "Label", "Value", "Currency"],
+      ["Summary", "Period (days)", String(days), ""],
+      ["Summary", "Collected in period", report.revenue.collectedInRange.toFixed(2), "USD"],
+      ["Summary", "Collected all time", report.revenue.collectedAllTime.toFixed(2), "USD"],
+      ["Summary", "Monthly recurring revenue", report.revenue.mrr.toFixed(2), "USD"],
+      ["Summary", "Active paying customers", String(report.revenue.activePayingCustomers), ""],
+      ["Summary", "Pending payments", String(report.payments.pending), ""],
+      ["Summary", "Failed payments", String(report.payments.failed), ""],
+      ["Summary", "New customers in period", String(report.customers.newInRange), ""],
+      ["Summary", "AI credits used", String(report.usage.creditsUsed), ""],
+      ...report.byPlan.map((row) => ["Plan revenue", row.name, row.usd.toFixed(2), "USD"]),
+      ...report.byKind.map((row) => ["Payment type", row.kind, row.usd.toFixed(2), "USD"]),
+      ...report.byMonth.map((row) => ["Monthly revenue", row.month, row.usd.toFixed(2), "USD"]),
+    ];
+    const csv = lines.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="sbd-revenue-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/notifications", async (req, res, next) => {
+  try {
+    const items = await notificationFeed(req.user.id);
+    res.json({ notifications: items, unread: items.filter((item) => !item.read).length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/notifications/read", async (req, res, next) => {
+  try {
+    const marked = await markNotificationsRead(req.user.id, req.body?.keys);
+    res.json({ marked });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/audit", async (req, res, next) => {
+  try {
+    const rows = await query(
+      `select a.id, a.action, a.target, a.meta, a.created_at, u.full_name, u.email
+         from audit_log a left join users u on u.id = a.actor_id
+        order by a.created_at desc limit 100`
+    );
+    res.json({
+      entries: rows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        target: row.target,
+        meta: row.meta,
+        createdAt: row.created_at,
+        actor: row.email ? `${row.full_name} (${row.email})` : "system",
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/integrations", (req, res) => {
+  res.json({ integrations: integrationStatus() });
 });
 
 export default router;

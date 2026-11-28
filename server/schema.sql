@@ -370,3 +370,219 @@ create table if not exists ai_usage_events (
 );
 create unique index if not exists ai_usage_events_key_idx on ai_usage_events (user_id, idempotency_key);
 create index if not exists ai_usage_events_month_idx on ai_usage_events (created_at desc, user_id);
+
+/* ---------- Live human takeover ---------- */
+/* A conversation lifecycle the backend owns: ai_active, human_requested,
+   human_active, resolved. The older 'open' value is migrated below and is
+   still accepted as a synonym for ai_active so nothing breaks mid-deploy. */
+alter table conversations alter column status set default 'ai_active';
+update conversations set status = 'ai_active' where status = 'open';
+alter table conversations add column if not exists human_requested_at timestamptz;
+alter table conversations add column if not exists human_assigned_at timestamptz;
+alter table conversations add column if not exists human_assigned_to uuid references users(id) on delete set null;
+alter table conversations add column if not exists resolved_at timestamptz;
+alter table conversations add column if not exists last_message_at timestamptz not null default now();
+alter table conversations add column if not exists last_visitor_message_at timestamptz;
+/* The last time the owner opened the thread, used for unread counts. */
+alter table conversations add column if not exists owner_last_read_at timestamptz not null default 'epoch';
+alter table conversations add column if not exists visitor_online_at timestamptz;
+create index if not exists conversations_lifecycle_idx on conversations (user_id, status, last_message_at desc);
+create index if not exists conversations_assigned_idx on conversations (human_assigned_to, status);
+/* Takeover state must agree with the status for rows written by older code. */
+update conversations set takeover = (status = 'human_active')
+ where takeover is distinct from (status = 'human_active');
+
+/* One row per in-app notification. dedupe_key is what stops the same warning
+   or the same support request from being announced twice. */
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  kind text not null default 'system',
+  level text not null default 'info',
+  title text not null,
+  body text not null default '',
+  link text not null default '',
+  conversation_id uuid references conversations(id) on delete set null,
+  dedupe_key text not null,
+  read_at timestamptz,
+  email_status text not null default '',
+  push_status text not null default '',
+  created_at timestamptz not null default now()
+);
+create unique index if not exists notifications_dedupe_idx on notifications (user_id, dedupe_key);
+create index if not exists notifications_user_idx on notifications (user_id, created_at desc);
+create index if not exists notifications_unread_idx on notifications (user_id, read_at) where read_at is null;
+
+/* Push subscriptions. One business owner can register several devices; a token
+   is unique per account so re-registering the same browser is harmless. */
+create table if not exists push_devices (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token text not null,
+  platform text not null default 'web',
+  label text not null default '',
+  user_agent text not null default '',
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  last_error text not null default ''
+);
+create unique index if not exists push_devices_token_idx on push_devices (user_id, token);
+create index if not exists push_devices_user_idx on push_devices (user_id, last_seen_at desc);
+
+/* ---------- Subscription upgrades and extra credits ---------- */
+/* purchased credits are tracked separately from the plan allowance and never
+   reset by a renewal. */
+alter table subscriptions add column if not exists bonus_credits numeric(18, 2) not null default 0;
+alter table payments add column if not exists kind text not null default 'plan';
+alter table payments add column if not exists credit_amount integer;
+alter table payments add column if not exists proration jsonb not null default '{}'::jsonb;
+alter table payments add column if not exists target_plan_id text;
+
+/* Admin-configured credit packages. Purchasing stays disabled until at least
+   one active row exists; no price is ever invented by the platform. */
+create table if not exists credit_packages (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  credits integer not null check (credits > 0),
+  price numeric(10, 2) not null check (price > 0),
+  currency text not null default 'USD',
+  active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists credit_packages_active_idx on credit_packages (active, sort_order);
+
+create table if not exists credit_purchases (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  payment_id uuid references payments(id) on delete set null,
+  package_id uuid references credit_packages(id) on delete set null,
+  credits integer not null,
+  price numeric(10, 2) not null default 0,
+  currency text not null default 'USD',
+  created_at timestamptz not null default now()
+);
+/* One payment can add credits exactly once. */
+create unique index if not exists credit_purchases_payment_idx on credit_purchases (payment_id);
+create index if not exists credit_purchases_user_idx on credit_purchases (user_id, created_at desc);
+
+/* ---- Operator reporting, notification centre and audit trail ------------- */
+create table if not exists admin_notification_reads (
+  user_id uuid not null references users(id) on delete cascade,
+  key text not null,
+  read_at timestamptz not null default now(),
+  primary key (user_id, key)
+);
+
+create table if not exists audit_log (
+  id bigserial primary key,
+  actor_id uuid references users(id) on delete set null,
+  action text not null,
+  target text not null default '',
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_log_created_idx on audit_log (created_at desc);
+
+/* ---- Customer support tickets ------------------------------------------- */
+create table if not exists support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  subject text not null,
+  category text not null default 'general',
+  priority text not null default 'normal',
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_customer_reply_at timestamptz,
+  last_staff_reply_at timestamptz
+);
+
+create table if not exists support_messages (
+  id uuid primary key default gen_random_uuid(),
+  ticket_id uuid not null references support_tickets(id) on delete cascade,
+  author_role text not null default 'customer',
+  author_id uuid references users(id) on delete set null,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists support_tickets_user_idx on support_tickets (user_id, updated_at desc);
+create index if not exists support_tickets_status_idx on support_tickets (status, updated_at desc);
+create index if not exists support_messages_ticket_idx on support_messages (ticket_id, created_at);
+
+/* ---- Refunds ------------------------------------------------------------ */
+create table if not exists refunds (
+  id uuid primary key default gen_random_uuid(),
+  payment_id uuid not null unique references payments(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  amount numeric(10, 2) not null,
+  currency text not null default 'USD',
+  reason text not null default '',
+  refunded_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists refunds_created_idx on refunds (created_at desc);
+
+/* ---- Custom requests and offers ----------------------------------------- */
+create table if not exists custom_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  kind text not null default 'service',
+  product text not null default '',
+  title text not null,
+  contact_name text default '',
+  business_name text default '',
+  email text default '',
+  phone text default '',
+  expected_usage text default '',
+  requirements text not null,
+  websites integer,
+  whatsapp_numbers integer,
+  budget text default '',
+  billing_preference text default '',
+  status text not null default 'pending',
+  admin_notes text default '',
+  assigned_to text default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists custom_requests_user_idx on custom_requests (user_id, updated_at desc);
+create index if not exists custom_requests_status_idx on custom_requests (status, updated_at desc);
+
+create table if not exists custom_offers (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null references custom_requests(id) on delete cascade,
+  name text not null,
+  description text not null default '',
+  price numeric(10, 2) not null,
+  currency text not null default 'USD',
+  billing_period text not null default 'one-off',
+  credits integer,
+  customer_limit integer,
+  website_limit integer,
+  included_features text default '',
+  conditions text default '',
+  expires_at timestamptz,
+  status text not null default 'draft',
+  revision_note text default '',
+  payment_id uuid references payments(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  responded_at timestamptz
+);
+create index if not exists custom_offers_request_idx on custom_offers (request_id, created_at desc);
+
+/* ---- Custom subscription entitlements ---------------------------------- */
+/* A custom plan row is created from an accepted offer and attached to the
+   customer's existing subscription. Enterprise is the only plan whose credits
+   are unlimited; every other custom plan must state its allowance. */
+alter table plans add column if not exists unlimited_credits boolean not null default false;
+alter table plans add column if not exists custom_request_id uuid;
+update plans set unlimited_credits = true where id = 'enterprise';
+alter table custom_offers add column if not exists zero_cost boolean not null default false;
+alter table custom_offers add column if not exists assistant_limit integer;
+alter table subscriptions add column if not exists custom_activated_at timestamptz;
+alter table subscriptions add column if not exists custom_previous_plan_id text;

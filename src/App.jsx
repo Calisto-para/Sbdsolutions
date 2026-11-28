@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import RouteMeta from "./components/RouteMeta";
+import PwaInstall from "./components/PwaInstall";
 import Home from "./pages/Home";
 import Services from "./pages/Services";
 import Pricing from "./pages/Pricing";
@@ -43,6 +44,7 @@ export default function App() {
   return (
     <AuthProvider>
       <RouteMeta />
+      <PwaInstall />
       <Routes>
         {Object.entries(LEGACY).map(([from, to]) => (
           <Route key={from} path={from} element={<Navigate to={to} replace />} />

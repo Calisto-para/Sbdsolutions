@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
+import { InstallCard } from "../../components/PwaInstall";
 
 export default function AccountSettings() {
   const { user, setUser, logout } = useAuth();
@@ -138,6 +139,8 @@ export default function AccountSettings() {
       </section>
 
       <section className="panel">
+        <InstallCard />
+
         <div className="panel-head">
           <h2>Preferences</h2>
           <p>Choose what we email you about.</p>

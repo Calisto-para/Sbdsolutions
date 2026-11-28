@@ -2291,3 +2291,25 @@
   color: #8a5a06;
   background: #fff6e3;
 }
+
+/* Dashboard forms keep one column on phones: two-column fields made labels
+   and inputs collide at 390px. */
+@media (max-width: 720px) {
+  .dash-stack .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .dash-stack .form-grid > label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+  }
+  .dash-stack .form-grid input,
+  .dash-stack .form-grid select,
+  .dash-stack .form-grid textarea {
+    width: 100%;
+  }
+  .dash-stack .form-grid__full {
+    grid-column: 1 / -1;
+  }
+}

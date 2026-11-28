@@ -22,6 +22,14 @@ const check = (label, condition, detail = "") => {
 };
 
 let child;
+/* The next test binds another port but shares the database file, so the
+   previous server must be gone before this script finishes. */
+async function waitForPortFree() {
+  for (let i = 0; i < 30; i++) {
+    try { await fetch("http://127.0.0.1:3111/api/health"); await new Promise((r) => setTimeout(r, 200)); }
+    catch { return; }
+  }
+}
 try {
   const bcrypt = (await import("bcryptjs")).default;
   const hash = await bcrypt.hash("Str0ngPass!23", 10);
@@ -107,4 +115,5 @@ try {
 } finally {
   if (child) child.kill();
 }
+await waitForPortFree();
 setTimeout(() => process.exit(process.exitCode || 0), 300);

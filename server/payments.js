@@ -462,9 +462,17 @@ export async function activatePayment(payment, { verifiedBy = null, method = "" 
         );
 
         const interval = offer.billing_period === "annual" ? "365 days" : "30 days";
-        /* A renewal extends from the current period end; a fresh activation
-           starts today. Consumed credits and purchased credits are kept, so
-           usage history is never wiped by a plan change. */
+        /* The account may never have opened the dashboard, so the subscription
+           row has to be created here as well as updated. A renewal extends
+           from the current period end; a fresh activation starts today.
+           Consumed credits and purchased credits are kept, so usage history is
+           never wiped by a plan change. */
+        await query(
+          `insert into subscriptions (user_id, plan_id, status, current_period_end)
+           values ($1, $2, 'active', now())
+           on conflict (user_id) do nothing`,
+          [payment.user_id, planId]
+        );
         await query(
           `update subscriptions
               set plan_id = $2,

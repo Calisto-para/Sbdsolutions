@@ -112,9 +112,8 @@ export async function usageOverview(userId) {
       : null,
     status: subscription.status,
     active:
-      subscription.status === "active" ||
-      (subscription.status === "canceled" &&
-        new Date(subscription.current_period_end) > new Date()),
+      (subscription.status === "active" || subscription.status === "canceled") &&
+      new Date(subscription.current_period_end) > new Date(),
     periodStart: subscription.period_start_at || subscription.started_at,
     renewalDate: subscription.current_period_end,
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),

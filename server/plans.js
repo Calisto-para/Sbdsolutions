@@ -394,9 +394,12 @@ const shape = (plan) =>
 export async function subscriptionSummary(userId) {
   const { subscription, plan } = await currentPlan(userId);
   const usage = await usageFor(userId);
+  /* An unpaid period is not active, whatever the status column still says.
+     This is what makes a lapsed custom agreement fall back to the standard
+     plan instead of keeping its allowances. */
   const active =
-    subscription.status === "active" ||
-    (subscription.status === "canceled" && new Date(subscription.current_period_end) > new Date());
+    (subscription.status === "active" || subscription.status === "canceled") &&
+    new Date(subscription.current_period_end) > new Date();
   return {
     planId: plan?.id || subscription.plan_id,
     storedPlanId: subscription.plan_id,

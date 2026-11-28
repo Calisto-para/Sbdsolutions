@@ -22,6 +22,14 @@ for (const [email, name, role] of [
 }
 
 let child;
+/* The next test binds another port but shares the database file, so the
+   previous server must be gone before this script finishes. */
+async function waitForPortFree() {
+  for (let i = 0; i < 30; i++) {
+    try { await fetch("http://127.0.0.1:3112/api/health"); await new Promise((r) => setTimeout(r, 200)); }
+    catch { return; }
+  }
+}
 let failures = 0;
 const check = (label, condition, detail = "") => {
   console.log(`${condition ? "PASS" : "FAIL"} ${label}${detail ? ` — ${detail}` : ""}`);
@@ -136,4 +144,5 @@ try {
   if (child) child.kill();
 }
 console.log(failures === 0 ? "ALL CUSTOM ENTITLEMENT CHECKS PASSED" : `${failures} FAILURE(S)`);
+await waitForPortFree();
 setTimeout(() => process.exit(failures === 0 ? 0 : 1), 300);

@@ -51,6 +51,52 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+/* A broad ceiling for the whole API, on top of the strict auth limiter. It
+   protects expensive endpoints (AI, uploads, receipts) from a single client
+   without throttling normal dashboard use. */
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1200,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: (req) => req.path === "/health",
+  message: { error: "Too many requests. Please wait a moment and try again." },
+});
+
+/* Cookie-authenticated writes must come from this site. A request with a
+   foreign Origin is refused before any route can act on it; requests without
+   an Origin header (native clients, curl, same-origin form posts) still work. */
+function sameOriginWrite(req, res, next) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  const origin = req.get("origin");
+  if (!origin) return next();
+  let host = "";
+  try {
+    host = new URL(origin).host;
+  } catch {
+    return res.status(403).json({ error: "This request did not come from the SBD Solutions site." });
+  }
+  /* Behind a proxy (including the Cloud preview), the browser's Origin is the
+     public hostname while req.host is the upstream address, so the forwarded
+     host must count as this site too. */
+  const allowed = new Set(
+    [
+      req.get("host"),
+      req.get("x-forwarded-host"),
+      new URL(env.appUrl || "http://localhost").host,
+    ].filter(Boolean)
+  );
+  if (!allowed.has(host)) {
+    /* Browsers mark their own requests with Sec-Fetch-Site, a header scripts
+       cannot forge. It keeps this check correct behind reverse proxies whose
+       internal Host differs from the public hostname. */
+    if (req.get("sec-fetch-site") !== "same-origin") {
+      return res.status(403).json({ error: "This request did not come from the SBD Solutions site." });
+    }
+  }
+  return next();
+}
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 40,
@@ -58,6 +104,9 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many attempts. Please wait a few minutes and try again." },
 });
+
+app.use("/api", apiLimiter);
+app.use("/api", sameOriginWrite);
 
 app.get("/api/db-test", async (req, res) => {
   try {
